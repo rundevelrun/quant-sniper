@@ -7,7 +7,8 @@ from unittest.mock import patch
 import config
 from bot import (
     account_drawdown_controls, build_tradeability, calculate_entry_shares,
-    build_operational_status, confirm_persistent_signals, git_commit_and_push, is_entry_window,
+    build_operational_status, confirm_persistent_signals, dashboard_status_label,
+    git_commit_and_push, is_entry_window,
     is_market_open, market_session_progress, save_json, trading_days_held,
     sector_limit_reached, update_dashboard_events, update_position_stop,
     render_dashboard,
@@ -60,6 +61,14 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("최근 3일 활동", markdown)
         self.assertIn("전체 누적 성과 — 전체 거래 이력", markdown)
         self.assertNotIn("계좌번호", markdown)
+        self.assertIn("| 시스템 상태 | 장 운영 |", markdown)
+        self.assertIn("🟢 정상", markdown)
+
+    def test_dashboard_status_uses_traffic_light_icons(self):
+        self.assertEqual(dashboard_status_label("running"), "🟢 정상")
+        self.assertEqual(dashboard_status_label("halted"), "🔴 거래 중단")
+        self.assertEqual(dashboard_status_label("error"), "🔴 오류")
+        self.assertEqual(dashboard_status_label("starting"), "🟡 starting")
 
     def test_dashboard_lists_monitored_symbols_with_codes(self):
         class Feed:

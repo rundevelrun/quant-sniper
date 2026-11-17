@@ -117,6 +117,16 @@ def record_dashboard_event(event_type, name="", code="", reason="", **details):
 def _md(value):
     return str(value if value is not None else "-").replace("|", "\\|").replace("\n", " ")
 
+def dashboard_status_label(status):
+    """운영 상태를 GitHub 대시보드용 신호등 레이블로 변환한다."""
+    if status == "running":
+        return "🟢 정상"
+    if status == "halted":
+        return "🔴 거래 중단"
+    if status == "error":
+        return "🔴 오류"
+    return f"🟡 {_md(status)}"
+
 def render_dashboard(status, detail, positions, realtime, events, now=None, context=None):
     """GitHub에서 바로 읽을 수 있는 운영 대시보드 Markdown을 생성한다."""
     now = now or datetime.datetime.now()
@@ -159,9 +169,11 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "# Quant Sniper Dashboard", "",
         f"> 마지막 갱신: **{now.strftime('%Y-%m-%d %H:%M:%S')} KST**", "",
         "## 1. 실시간 현재 상태 — 기간 제한 없음", "",
-        "| 상태 | 장 운영 | 상세 | 보유 종목 |",
+        "| 시스템 상태 | 장 운영 | 상세 | 보유 종목 |",
         "|---|---:|---|---:|",
-        f"| {_md(status)} | {'OPEN' if CURRENT_MARKET_OPEN else 'CLOSED'} | {_md(detail)} | {len(positions)} |",
+        f"| {dashboard_status_label(status)} "
+        f"| {'🟢 OPEN' if CURRENT_MARKET_OPEN else '🔴 CLOSED'} "
+        f"| {_md(detail)} | {len(positions)} |",
         "", "### 시스템 신선도", "",
         "| 키움 WebSocket | 마지막 실시간 시세 | 마지막 계좌 조회 | 마지막 정상 루프 | 실행 커밋 |",
         "|---|---|---|---|---|",
