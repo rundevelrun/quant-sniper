@@ -6,14 +6,16 @@ from unittest.mock import patch
 
 import config
 from bot import (
-    account_drawdown_controls, build_tradeability, calculate_entry_shares,
+    account_drawdown_controls, account_snapshot_baseline, build_tradeability,
+    calculate_entry_shares,
     build_operational_status, confirm_persistent_signals, dashboard_status_label,
     git_commit_and_push, is_entry_window,
     is_market_open, market_session_progress, save_json, trading_days_held,
-    sector_limit_reached, update_dashboard_events, update_position_stop,
+    estimate_external_cash_flow, sector_limit_reached, time_stop_reason,
+    update_dashboard_events, update_position_stop,
     render_dashboard,
 )
-from kiwoom_api import KiwoomRestAPI
+from kiwoom_api import KiwoomRestAPI, _market_name
 
 
 class FakeResponse:
@@ -28,6 +30,11 @@ class FakeResponse:
 
 
 class SafetyTests(unittest.TestCase):
+    def test_kiwoom_market_names_are_normalized(self):
+        self.assertEqual(_market_name("거래소"), "KOSPI")
+        self.assertEqual(_market_name("코스닥"), "KOSDAQ")
+        self.assertEqual(_market_name("KOSDAQ"), "KOSDAQ")
+
     def test_dashboard_keeps_three_days_and_deduplicates_skips(self):
         import datetime
         now = datetime.datetime(2026, 11, 16, 10, 0)
@@ -170,6 +177,47 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(multiplier, 1.0)
         self.assertFalse(halted)
 
+    def test_external_cash_flow_excludes_market_pnl(self):
+        previous = {
+            "total_assets": 300000,
+            "positions": {"000001": {"shares": 1, "current_price": 10000}},
+        }
+        market_move_only = {
+            "total_assets": 302000,
+            "positions": {"000001": {"shares": 1, "current_price": 12000}},
+        }
+        self.assertEqual(
+            estimate_external_cash_flow(previous, market_move_only), 0
+        )
+        deposit = {
+            "total_assets": 402000,
+            "positions": {"000001": {"shares": 1, "current_price": 12000}},
+        }
+        self.assertEqual(
+            estimate_external_cash_flow(previous, deposit), 100000
+        )
+        self.assertEqual(
+            account_snapshot_baseline(deposit)["total_assets"], 402000
+        )
+
+    def test_external_cash_flow_skips_changed_positions(self):
+        previous = {"total_assets": 300000, "positions": {}}
+        after_buy = {
+            "total_assets": 300000,
+            "positions": {"000001": {"shares": 1, "current_price": 50000}},
+        }
+        self.assertEqual(estimate_external_cash_flow(previous, after_buy), 0)
+
+    def test_profitable_position_gets_extended_time_stop(self):
+        losing = {"buy_price": 10000, "days_held": 7, "trailing_active": False}
+        self.assertIsNotNone(time_stop_reason(losing, 9900))
+        profitable = {"buy_price": 10000, "days_held": 7, "trailing_active": False}
+        self.assertIsNone(time_stop_reason(profitable, 10100))
+        profitable["days_held"] = 14
+        self.assertIsNotNone(time_stop_reason(profitable, 10100))
+        profitable["trailing_active"] = True
+        self.assertIsNone(time_stop_reason(profitable, 10100))
+
     def test_operational_status_preserves_risk_reason(self):
         status, detail = build_operational_status(
             True, ["계좌 조회 실패", "계좌 조회 실패", "체결 미확인"], 1
@@ -300,6 +348,7 @@ class SafetyTests(unittest.TestCase):
         )
         self.assertEqual(universe, {"후보주": "000001"})
         self.assertEqual(api.last_universe_metadata["후보주"]["sector"], "반도체")
+        self.assertEqual(api.last_universe_metadata["후보주"]["market"], "KOSPI")
 
     def test_kiwoom_daily_candles_are_returned_oldest_first(self):
         with patch.object(config, "LIVE_TRADING_ENABLED", True):

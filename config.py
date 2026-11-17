@@ -43,6 +43,7 @@ RSI_BUY_THRESHOLD = 28.0       # RSI 28 이하 시 과매도 저격 매수
 RSI_RECOVERY_THRESHOLD = 30.0  # 과매도 진입 후 30 상향 돌파 확인
 VBO_K = 0.5                    # 변동성 돌파 계수 (전일 레인지의 0.5)
 MARKET_PROXY_CODE = "069500"   # KODEX 200: 국내 시장 추세 프록시
+KOSDAQ_MARKET_PROXY_CODE = "229200" # KODEX 코스닥150: 코스닥 시장 추세 프록시
 MARKET_MA_PERIOD = 60
 VOLUME_CONFIRM_MULTIPLIER = 1.5
 MAX_ENTRY_GAP_PCT = 0.04
@@ -64,6 +65,7 @@ TRAILING_STOP_TRIGGER = 0.040  # +4.0% 수익 시 트레일링 스탑 발동
 TRAILING_STOP_LOCK = 0.010     # 발동 후 손절선을 매수가 +1.0%로 상향
 TAKE_PROFIT_PCT = 0.080        # 고점 추적 트레일링 활성화 기준 (+8.0%)
 MAX_HOLD_DAYS = 7              # 최대 보유일 (7거래일 경과 시 타임스탑)
+MAX_PROFIT_HOLD_DAYS = 14      # 수익 중이지만 추적 미활성인 포지션의 연장 한도
 
 # 💡 거래비용 및 슬리피지 보수적 반영 규칙
 TRANSACTION_TAX_PCT = 0.0018   # 증권거래세 0.18%

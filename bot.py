@@ -12,11 +12,13 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 from config import (
     DYNAMIC_SCREENING, SCREENER_TOP_N, DEFAULT_UNIVERSE,
     STOP_LOSS_PCT, TRAILING_STOP_TRIGGER, TRAILING_STOP_LOCK,
-    TAKE_PROFIT_PCT, MAX_HOLD_DAYS, MAX_ALLOC_PER_STOCK, MAX_POSITIONS,
+    TAKE_PROFIT_PCT, MAX_HOLD_DAYS, MAX_PROFIT_HOLD_DAYS,
+    MAX_ALLOC_PER_STOCK, MAX_POSITIONS,
     DAILY_KILL_SWITCH_PCT, POLL_INTERVAL_SECONDS, API_REQUEST_DELAY,
     TOTAL_ROUNDTRIP_COST_PCT, TRANSACTION_TAX_PCT, BROKER_COMMISSION_PCT,
     SLIPPAGE_ESTIMATE_PCT, ORDER_CONFIRM_TIMEOUT_SECONDS,
-    MARKET_PROXY_CODE, ENTRY_START_TIME, ENTRY_END_TIME, AUTO_GIT_PUSH,
+    MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE,
+    ENTRY_START_TIME, ENTRY_END_TIME, AUTO_GIT_PUSH,
     MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW, MAX_RISK_PER_TRADE_PCT,
     EQUITY_SLOWDOWN_DRAWDOWN_PCT, EQUITY_HALT_DRAWDOWN_PCT,
     MAX_POSITIONS_PER_SECTOR, ATR_STOP_MULTIPLIER,
@@ -165,6 +167,18 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         max_loss_streak = max(max_loss_streak, loss_streak)
     realtime_ok, realtime_error = realtime.is_healthy()
     commit_hash = context.get("commit_hash", "-")
+    market_regimes = context.get("market_regimes", {})
+    if market_regimes:
+        market_label = " · ".join(
+            f"{market}: {'🟢 상승' if favorable else '🔴 비우호'}"
+            for market, favorable in market_regimes.items()
+        )
+    else:
+        market_label = (
+            "🟢 상승 국면 — 신규 진입 검토 가능"
+            if context.get("market_favorable")
+            else "🔴 비우호 국면 — 신규 진입 차단"
+        )
     lines = [
         "# Quant Sniper Dashboard", "",
         f"> 마지막 갱신: **{now.strftime('%Y-%m-%d %H:%M:%S')} KST**", "",
@@ -186,7 +200,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
 
     lines += [
         "", "### 오늘의 감시 및 신호", "",
-        f"> 시장 진입 필터: **{'🟢 상승 국면 — 신규 진입 검토 가능' if context.get('market_favorable') else '🔴 비우호 국면 — 신규 진입 차단'}**",
+        f"> 시장 진입 필터: **{market_label}**",
         "",
         "| 유니버스 기준일 | 데이터 출처 | 감시 종목 | 원신호 | 연속 확인 중 | 확정 신호 |",
         "|---|---|---:|---:|---:|---:|",
@@ -194,8 +208,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f"| {int(context.get('universe_count', 0))} | {int(context.get('raw_signal_count', 0))} "
         f"| {int(context.get('confirming_signal_count', 0))} | {int(context.get('confirmed_signal_count', 0))} |",
         "", "#### 감시 종목 전체", "",
-        "| 종목 | 코드 | 업종 | 현재가 | 최대 수량 | 자금 조건 | 매수 신호 |",
-        "|---|---:|---|---:|---:|---|---|",
+        "| 종목 | 코드 | 시장 | 업종 | 현재가 | 최대 수량 | 자금 조건 | 매수 신호 |",
+        "|---|---:|---|---|---:|---:|---|---|",
     ]
     universe_symbols = context.get("tradeability") or context.get("universe_symbols", [])
     signal_statuses = {
@@ -216,13 +230,14 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             )
             lines.append(
                 f"| {_md(item.get('name'))} | `{_md(item.get('code'))}` "
+                f"| {_md(item.get('market', '미분류'))} "
                 f"| {_md(item.get('sector', '미분류'))} "
                 f"| {f'{float(price):,.0f}원' if price else '-'} "
                 f"| {int(max_shares) if max_shares is not None else '-'} "
                 f"| {eligibility} | {signal_text} |"
             )
     else:
-        lines.append("| - | - | - | - | - | - | - |")
+        lines.append("| - | - | - | - | - | - | - | - |")
     lines += [
         "", "#### 신호 확인 단계", "",
         "| 종목 | 전략 | 연속 확인 |",
@@ -265,12 +280,17 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             current_stop = float(pos.get("trailing_stop_price", initial_stop))
             highest = float(pos.get("highest_price", buy))
             off_high = ((current - highest) / highest * 100) if current and highest else None
-            remaining_days = max(0, MAX_HOLD_DAYS - int(pos.get("days_held", 0)))
+            if pos.get("trailing_active"):
+                time_stop_text = "추적 중"
+            elif current > buy:
+                time_stop_text = f"{max(0, MAX_PROFIT_HOLD_DAYS-int(pos.get('days_held', 0)))}일"
+            else:
+                time_stop_text = f"{max(0, MAX_HOLD_DAYS-int(pos.get('days_held', 0)))}일"
             lines.append(
                 f"| {_md(name)} | {int(pos.get('shares', 0))} | {buy:,.0f} | {current:,.0f} "
                 f"| {return_text} | {initial_stop:,.0f} | {current_stop:,.0f} "
                 f"| {f'{off_high:+.2f}%' if off_high is not None else '-'} "
-                f"| {remaining_days}일 | {'ON' if pos.get('trailing_active') else 'OFF'} |"
+                f"| {time_stop_text} | {'ON' if pos.get('trailing_active') else 'OFF'} |"
             )
     else:
         lines.append("| 보유 종목 없음 | - | - | - | - | - | - | - | - | - |")
@@ -357,12 +377,14 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
         "account_drawdown_pct": render_context.get("account_drawdown_pct"),
         "daily_return_pct": render_context.get("daily_return_pct"),
         "entry_size_multiplier": render_context.get("entry_size_multiplier", 1.0),
+        "last_external_flow": render_context.get("last_external_flow"),
         "universe_date": render_context.get("universe_date"),
         "universe_source": render_context.get("universe_source"),
         "universe_count": render_context.get("universe_count", 0),
         "universe_symbols": render_context.get("universe_symbols", []),
         "tradeability": render_context.get("tradeability", []),
         "market_favorable": bool(render_context.get("market_favorable", False)),
+        "market_regimes": render_context.get("market_regimes", {}),
         "signal_statuses": render_context.get("signal_statuses", []),
         "raw_signal_count": render_context.get("raw_signal_count", 0),
         "confirming_signal_count": render_context.get("confirming_signal_count", 0),
@@ -507,6 +529,61 @@ def account_drawdown_controls(current_assets, peak_assets):
     size_multiplier = 0.5 if drawdown >= EQUITY_SLOWDOWN_DRAWDOWN_PCT else 1.0
     return peak_assets, drawdown, size_multiplier, halted
 
+def account_snapshot_baseline(account):
+    """입출금 추정에 필요한 비민감 계좌 평가 스냅샷을 만든다."""
+    return {
+        "total_assets": float(account.get("total_assets") or 0),
+        "positions": {
+            code: {
+                "shares": int(pos.get("shares", 0)),
+                "current_price": float(pos.get("current_price") or 0),
+            }
+            for code, pos in account.get("positions", {}).items()
+        },
+    }
+
+def estimate_external_cash_flow(previous_snapshot, account):
+    """보유수량이 같은 두 계좌 스냅샷에서 가격 변동으로 설명되지 않는 입출금을 추정한다."""
+    if not previous_snapshot:
+        return 0.0
+    previous_positions = previous_snapshot.get("positions", {})
+    current_positions = account.get("positions", {})
+    previous_quantities = {
+        code: int(pos.get("shares", 0)) for code, pos in previous_positions.items()
+    }
+    current_quantities = {
+        code: int(pos.get("shares", 0)) for code, pos in current_positions.items()
+    }
+    # 매수·매도 직후에는 현금 이동과 외부 입출금을 안전하게 구분할 수 없으므로 보정하지 않는다.
+    if previous_quantities != current_quantities:
+        return 0.0
+    previous_assets = float(previous_snapshot.get("total_assets") or 0)
+    current_assets = float(account.get("total_assets") or 0)
+    if previous_assets <= 0:
+        return 0.0
+    market_pnl = sum(
+        shares * (
+            float(current_positions.get(code, {}).get("current_price") or 0)
+            - float(previous_positions.get(code, {}).get("current_price") or 0)
+        )
+        for code, shares in current_quantities.items()
+    )
+    unexplained_change = current_assets - previous_assets - market_pnl
+    noise_threshold = max(1000.0, previous_assets * 0.005)
+    return unexplained_change if abs(unexplained_change) >= noise_threshold else 0.0
+
+def time_stop_reason(pos, current_price):
+    """손실·정체 포지션은 7일, 수익 포지션은 14일까지 두고 추적 활성 시 면제한다."""
+    if pos.get("trailing_active"):
+        return None
+    days_held = int(pos.get("days_held", 0))
+    buy_price = float(pos.get("buy_price", 0))
+    if days_held >= MAX_PROFIT_HOLD_DAYS:
+        return f"수익 포지션 연장 타임스탑 ({MAX_PROFIT_HOLD_DAYS}거래일)"
+    if days_held >= MAX_HOLD_DAYS and float(current_price) <= buy_price:
+        return f"타임스탑 (비수익 상태 {MAX_HOLD_DAYS}거래일)"
+    return None
+
 def calculate_entry_shares(total_assets, cash, entry_price, stop_loss_pct,
                            size_multiplier=1.0):
     """종목당 투자 한도와 거래당 계획 손실 0.7%를 모두 지키는 정수 수량을 산출한다."""
@@ -556,6 +633,7 @@ def build_tradeability(active_universe, universe_metadata, candles_dict,
         meta = universe_metadata.get(name, {})
         results.append({
             "name": name, "code": code,
+            "market": meta.get("market", "미분류"),
             "sector": meta.get("sector", "미분류"),
             "price": price or None,
             "stop_loss_pct": stop_pct,
@@ -697,7 +775,8 @@ def run_trading_loop():
             cache_symbols = universe_cache.get("symbols", {})
             cache_metadata = universe_cache.get("metadata", {})
             cache_complete = bool(cache_symbols) and all(
-                name in cache_metadata for name in cache_symbols
+                name in cache_metadata and cache_metadata[name].get("market")
+                for name in cache_symbols
             )
             if universe_cache.get("date") == today_str and cache_symbols:
                 active_universe = universe_cache["symbols"]
@@ -713,15 +792,20 @@ def run_trading_loop():
                 "universe_names": list(active_universe.keys()),
                 "universe_symbols": [
                     {"name": name, "code": code,
+                     "market": universe_metadata.get(name, {}).get("market", "미분류"),
                      "sector": universe_metadata.get(name, {}).get("sector", "미분류")}
                     for name, code in active_universe.items()
                 ],
             })
             realtime.set_symbols(
-                list(active_universe.values()) + [MARKET_PROXY_CODE]
+                list(active_universe.values())
+                + [MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE]
                 + [p.get("code") for p in load_json(POSITIONS_FILE, {}).values()]
             )
-            proxy_quote = realtime.quote(MARKET_PROXY_CODE)
+            proxy_quote = (
+                realtime.quote(MARKET_PROXY_CODE)
+                or realtime.quote(KOSDAQ_MARKET_PROXY_CODE)
+            )
             if proxy_quote:
                 dashboard_context["last_quote_at"] = datetime.datetime.fromtimestamp(
                     proxy_quote.get("received_at", time.time())
@@ -753,6 +837,9 @@ def run_trading_loop():
                         "universe_count": len(screened),
                         "universe_symbols": [
                             {"name": name, "code": code,
+                             "market": universe_metadata.get(name, {}).get(
+                                 "market", "미분류"
+                             ),
                              "sector": universe_metadata.get(name, {}).get(
                                  "sector", "미분류"
                              )}
@@ -800,6 +887,9 @@ def run_trading_loop():
                         "universe_count": len(screened),
                         "universe_symbols": [
                             {"name": name, "code": code,
+                             "market": universe_metadata.get(name, {}).get(
+                                 "market", "미분류"
+                             ),
                              "sector": universe_metadata.get(name, {}).get(
                                  "sector", "미분류"
                              )}
@@ -860,6 +950,7 @@ def run_trading_loop():
                         "date": today_str, "opening_assets": opening_assets,
                         "peak_assets": peak_assets,
                         "halted": False,
+                        "account_baseline": account_snapshot_baseline(account),
                     }
                     save_json(RISK_FILE, risk_state)
 
@@ -868,12 +959,33 @@ def run_trading_loop():
 
             if account.get("ok") and opening_assets:
                 current_assets = account.get("total_assets", opening_assets)
+                external_flow = estimate_external_cash_flow(
+                    risk_state.get("account_baseline"), account
+                )
+                if external_flow:
+                    opening_assets = max(0.0, float(opening_assets) + external_flow)
+                    peak_assets = max(
+                        float(current_assets), float(peak_assets or 0) + external_flow
+                    )
+                    dashboard_context["last_external_flow"] = {
+                        "timestamp": now_str,
+                        "amount": round(external_flow, 0),
+                    }
+                    record_dashboard_event(
+                        "SYSTEM", reason="외부 입출금 추정치로 손익 기준 보정",
+                        amount=round(external_flow, 0),
+                    )
+                    print(
+                        f"[{now_str}] [ACCOUNT] 외부 입출금 {external_flow:+,.0f}원 추정; "
+                        "시작자산·계좌고점 보정"
+                    )
                 peak_assets, account_drawdown, entry_size_multiplier, drawdown_halted = (
                     account_drawdown_controls(current_assets, peak_assets)
                 )
                 risk_state.update({
                     "date": today_str, "opening_assets": opening_assets,
                     "peak_assets": peak_assets,
+                    "account_baseline": account_snapshot_baseline(account),
                 })
                 if drawdown_halted:
                     trading_halted = True
@@ -886,7 +998,10 @@ def run_trading_loop():
                         f"계좌 낙폭 감속 적용: -{account_drawdown*100:.2f}% (주문 50%)"
                     )
                 save_json(RISK_FILE, risk_state)
-                daily_return = (current_assets - opening_assets) / opening_assets
+                daily_return = (
+                    (current_assets - opening_assets) / opening_assets
+                    if opening_assets > 0 else 0.0
+                )
                 dashboard_context.update({
                     "account_drawdown_pct": account_drawdown * 100,
                     "daily_return_pct": daily_return * 100,
@@ -894,11 +1009,10 @@ def run_trading_loop():
                 })
                 if daily_return <= -DAILY_KILL_SWITCH_PCT:
                     trading_halted = True
-                    save_json(RISK_FILE, {
-                        "date": today_str, "opening_assets": opening_assets,
-                        "peak_assets": peak_assets,
+                    risk_state.update({
                         "halted": True, "reason": "daily_loss_limit",
                     })
+                    save_json(RISK_FILE, risk_state)
                     risk_reasons.append(f"일일 손실 한도 도달: {daily_return*100:.2f}%")
                     print(f"[{now_str}] [KILL SWITCH] 일일 손실 {daily_return*100:.2f}%로 신규 주문 중단")
 
@@ -935,16 +1049,40 @@ def run_trading_loop():
                 if cache_miss:
                     time.sleep(API_REQUEST_DELAY)
 
-            market_candles = get_kiwoom_candles(
+            kospi_market_candles = get_kiwoom_candles(
                 api, realtime, daily_candle_cache, MARKET_PROXY_CODE, now
             )
-            market_favorable = is_favorable_market(market_candles)
-            raw_signals = evaluate_signals(
-                candles_dict, market_candles, market_session_progress(now)
+            kosdaq_market_candles = get_kiwoom_candles(
+                api, realtime, daily_candle_cache, KOSDAQ_MARKET_PROXY_CODE, now
             )
+            market_regimes = {
+                "KOSPI": is_favorable_market(kospi_market_candles),
+                "KOSDAQ": is_favorable_market(kosdaq_market_candles),
+            }
+            kosdaq_names = {
+                name for name, meta in universe_metadata.items()
+                if "KOSDAQ" in str(meta.get("market", "")).upper()
+            }
+            kospi_candles = {
+                name: candles for name, candles in candles_dict.items()
+                if name not in kosdaq_names
+            }
+            kosdaq_candles = {
+                name: candles for name, candles in candles_dict.items()
+                if name in kosdaq_names
+            }
+            progress = market_session_progress(now)
+            raw_signals = evaluate_signals(
+                kospi_candles, kospi_market_candles, progress
+            ) + evaluate_signals(
+                kosdaq_candles, kosdaq_market_candles, progress
+            )
+            raw_signals.sort(key=lambda item: item["score"])
+            market_favorable = any(market_regimes.values())
             raw_signal_by_name = {sig["name"]: sig for sig in raw_signals}
             dashboard_context.update({
                 "market_favorable": market_favorable,
+                "market_regimes": market_regimes,
                 "raw_signal_count": len(raw_signals),
                 "signal_statuses": [
                     {
@@ -987,9 +1125,11 @@ def run_trading_loop():
                 if curr_p <= stop_price:
                     exit_price = stop_price
                     exit_reason = stop_reason
-                elif pos.get("days_held", 0) >= MAX_HOLD_DAYS:
-                    exit_price = curr_p
-                    exit_reason = f"타임스탑 (최대 보유 {MAX_HOLD_DAYS}일 경과)"
+                else:
+                    time_exit_reason = time_stop_reason(pos, curr_p)
+                    if time_exit_reason:
+                        exit_price = curr_p
+                        exit_reason = time_exit_reason
                     
                 if exit_price:
                     if account.get("ok"):
@@ -1244,7 +1384,7 @@ def run_trading_loop():
             # 주문 처리 중 새 영구 안전잠금이 발생했을 수 있으므로 최종 상태를 다시 계산한다.
             loop_halted = trading_halted or account_lookup_failed
             signal_snapshot = (
-                market_favorable,
+                tuple(market_regimes.items()),
                 tuple(
                     (item.get("name"), item.get("active"), item.get("strategy"),
                      item.get("count", 0))

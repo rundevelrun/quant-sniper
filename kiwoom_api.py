@@ -10,6 +10,15 @@ def _number(value, default=0.0):
     except (TypeError, ValueError):
         return default
 
+def _market_name(value):
+    """키움의 한글/영문 시장명을 전략용 KOSPI/KOSDAQ 값으로 정규화한다."""
+    text = str(value or "").strip().upper()
+    if "코스닥" in text or "KOSDAQ" in text:
+        return "KOSDAQ"
+    if "거래소" in text or "KOSPI" in text:
+        return "KOSPI"
+    return "미분류"
+
 class KiwoomRestAPI:
     """
     키움증권 최신 공식 REST API 클라이언트
@@ -159,6 +168,7 @@ class KiwoomRestAPI:
                 selected[name] = code
                 metadata[name] = {
                     "code": code,
+                    "market": _market_name(info.get("marketName")),
                     "sector": str(info.get("upName", "")).strip() or "미분류",
                     "previous_close": previous_close,
                     "previous_market_cap": previous_market_cap,
