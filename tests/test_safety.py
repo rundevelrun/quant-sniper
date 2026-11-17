@@ -98,6 +98,25 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("🟢 RSI 과매도 반등 (2/3)", markdown)
         self.assertIn("🔴 신호 없음", markdown)
 
+    def test_dashboard_hides_system_events_but_keeps_actionable_events(self):
+        class Feed:
+            def quote(self, code):
+                return None
+            def is_healthy(self):
+                return True, ""
+        events = [
+            {"type": "SYSTEM", "reason": "봇 프로세스 시작",
+             "timestamp": "2026-11-17T09:00:00", "count": 1},
+            {"type": "RISK", "reason": "계좌 조회 실패",
+             "timestamp": "2026-11-17T09:01:00", "count": 1},
+        ]
+        markdown = render_dashboard(
+            "running", "정규 감시 중", {}, Feed(), events,
+            now=__import__("datetime").datetime(2026, 11, 17, 10, 0),
+        )
+        self.assertNotIn("봇 프로세스 시작", markdown)
+        self.assertIn("계좌 조회 실패", markdown)
+
     def test_position_size_obeys_allocation_and_trade_risk(self):
         # 30만원, 2만원 주식, 3% 손절: 30% 비중 한도는 4주, 위험 한도는 3주다.
         self.assertEqual(calculate_entry_shares(300000, 300000, 20000, 0.03), 3)

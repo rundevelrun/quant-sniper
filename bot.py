@@ -289,7 +289,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "| 시각 | 유형 | 종목 | 수량 | 가격 | 사유 | 반복 |",
         "|---|---|---|---:|---:|---|---:|",
     ]
-    visible = [e for e in recent_events if not str(e.get("type", "")).startswith("_")]
+    visible_types = {"BUY", "SELL", "SKIP", "RISK", "ERROR"}
+    visible = [e for e in recent_events if e.get("type") in visible_types]
     for event in reversed(visible[-100:]):
         lines.append(
             f"| {_md(event.get('timestamp', '')).replace('T', ' ')} | {_md(event.get('type'))} "
