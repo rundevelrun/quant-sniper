@@ -22,7 +22,7 @@ from config import (
     MAX_POSITIONS_PER_SECTOR, ATR_STOP_MULTIPLIER,
     MIN_STOP_LOSS_PCT, MAX_STOP_LOSS_PCT
 )
-from strategy import calculate_atr, evaluate_signals
+from strategy import calculate_atr, evaluate_signals, is_favorable_market
 from kiwoom_api import KiwoomRestAPI
 from kiwoom_realtime import KiwoomRealtimeFeed
 
@@ -76,8 +76,8 @@ def save_json(filepath, data):
         os.fsync(f.fileno())
     os.replace(temp_path, filepath)
 
-def update_dashboard_events(events, event, now=None, retention_days=7):
-    """최근 7일 이벤트만 유지하고 반복 스킵은 한 항목의 횟수로 합친다."""
+def update_dashboard_events(events, event, now=None, retention_days=3):
+    """최근 3일 이벤트만 유지하고 반복 스킵은 한 항목의 횟수로 합친다."""
     now = now or datetime.datetime.now()
     cutoff = now - datetime.timedelta(days=retention_days)
     retained = []
@@ -121,13 +121,13 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     """GitHub에서 바로 읽을 수 있는 운영 대시보드 Markdown을 생성한다."""
     now = now or datetime.datetime.now()
     context = context or {}
-    seven_day_events = update_dashboard_events(events, {
+    recent_events = update_dashboard_events(events, {
         "type": "_render_marker", "timestamp": now.isoformat(timespec="seconds")
     }, now)[:-1]
-    counts = {kind: sum(int(e.get("count", 1)) for e in seven_day_events
+    counts = {kind: sum(int(e.get("count", 1)) for e in recent_events
                         if e.get("type") == kind)
               for kind in ("BUY", "SELL", "SKIP", "RISK", "ERROR")}
-    sells = [e for e in seven_day_events if e.get("type") == "SELL"]
+    sells = [e for e in recent_events if e.get("type") == "SELL"]
     returns = [float(e["net_return_pct"]) for e in sells if e.get("net_return_pct") is not None]
     wins = sum(1 for value in returns if value > 0)
     win_rate = (wins / len(returns) * 100) if returns else None
@@ -174,16 +174,21 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
 
     lines += [
         "", "### 오늘의 감시 및 신호", "",
+        f"> 시장 진입 필터: **{'🟢 상승 국면 — 신규 진입 검토 가능' if context.get('market_favorable') else '🔴 비우호 국면 — 신규 진입 차단'}**",
+        "",
         "| 유니버스 기준일 | 데이터 출처 | 감시 종목 | 원신호 | 연속 확인 중 | 확정 신호 |",
         "|---|---|---:|---:|---:|---:|",
         f"| {_md(context.get('universe_date', '-'))} | {_md(context.get('universe_source', '-'))} "
         f"| {int(context.get('universe_count', 0))} | {int(context.get('raw_signal_count', 0))} "
         f"| {int(context.get('confirming_signal_count', 0))} | {int(context.get('confirmed_signal_count', 0))} |",
         "", "#### 감시 종목 전체", "",
-        "| 종목 | 코드 | 업종 | 현재가 | 최대 수량 | 매수 가능성 |",
-        "|---|---:|---|---:|---:|---|",
+        "| 종목 | 코드 | 업종 | 현재가 | 최대 수량 | 자금 조건 | 매수 신호 |",
+        "|---|---:|---|---:|---:|---|---|",
     ]
     universe_symbols = context.get("tradeability") or context.get("universe_symbols", [])
+    signal_statuses = {
+        item.get("name"): item for item in context.get("signal_statuses", [])
+    }
     if universe_symbols:
         for item in universe_symbols:
             price = item.get("price")
@@ -192,14 +197,20 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 ("가능" if item.get("eligible") else _md(item.get("reason", "불가")))
                 if "eligible" in item else "계산 대기"
             )
+            signal = signal_statuses.get(item.get("name"), {})
+            signal_text = (
+                f"🟢 {_md(signal.get('strategy'))} ({int(signal.get('count', 0))}/3)"
+                if signal.get("active") else "🔴 신호 없음"
+            )
             lines.append(
                 f"| {_md(item.get('name'))} | `{_md(item.get('code'))}` "
                 f"| {_md(item.get('sector', '미분류'))} "
                 f"| {f'{float(price):,.0f}원' if price else '-'} "
-                f"| {int(max_shares) if max_shares is not None else '-'} | {eligibility} |"
+                f"| {int(max_shares) if max_shares is not None else '-'} "
+                f"| {eligibility} | {signal_text} |"
             )
     else:
-        lines.append("| - | - | - | - | - | - |")
+        lines.append("| - | - | - | - | - | - | - |")
     lines += [
         "", "#### 신호 확인 단계", "",
         "| 종목 | 전략 | 연속 확인 |",
@@ -253,20 +264,20 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         lines.append("| 보유 종목 없음 | - | - | - | - | - | - | - | - | - |")
 
     lines += [
-        "", "## 2. 최근 7일 활동", "",
+        "", "## 2. 최근 3일 활동", "",
         "| 매수 | 매도 | 스킵 | 위험 | 오류 |",
         "|---:|---:|---:|---:|---:|",
         f"| {counts['BUY']} | {counts['SELL']} | {counts['SKIP']} | {counts['RISK']} | {counts['ERROR']} |",
-        "", "### 최근 7일 청산 성과", "",
+        "", "### 최근 3일 청산 성과", "",
         "| 청산 거래 | 승률 | 평균 순수익률 |",
         "|---:|---:|---:|",
         f"| {len(returns)} | {f'{win_rate:.1f}%' if win_rate is not None else '-'} "
         f"| {f'{avg_return:+.2f}%' if avg_return is not None else '-'} |",
-        "", "### 최근 7일 이벤트", "",
+        "", "### 최근 3일 이벤트", "",
         "| 시각 | 유형 | 종목 | 수량 | 가격 | 사유 | 반복 |",
         "|---|---|---|---:|---:|---|---:|",
     ]
-    visible = [e for e in seven_day_events if not str(e.get("type", "")).startswith("_")]
+    visible = [e for e in recent_events if not str(e.get("type", "")).startswith("_")]
     for event in reversed(visible[-100:]):
         lines.append(
             f"| {_md(event.get('timestamp', '')).replace('T', ' ')} | {_md(event.get('type'))} "
@@ -338,6 +349,8 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
         "universe_count": render_context.get("universe_count", 0),
         "universe_symbols": render_context.get("universe_symbols", []),
         "tradeability": render_context.get("tradeability", []),
+        "market_favorable": bool(render_context.get("market_favorable", False)),
+        "signal_statuses": render_context.get("signal_statuses", []),
         "raw_signal_count": render_context.get("raw_signal_count", 0),
         "confirming_signal_count": render_context.get("confirming_signal_count", 0),
         "confirmed_signal_count": render_context.get("confirmed_signal_count", 0),
@@ -632,6 +645,7 @@ def run_trading_loop():
     trading_halted = False
     last_published_state = ("running", "봇 최초 가동 시작")
     signal_confirmations = {}
+    last_signal_snapshot = None
     daily_candle_cache = {}
     peak_assets = None
     entry_size_multiplier = 1.0
@@ -908,6 +922,30 @@ def run_trading_loop():
                 if cache_miss:
                     time.sleep(API_REQUEST_DELAY)
 
+            market_candles = get_kiwoom_candles(
+                api, realtime, daily_candle_cache, MARKET_PROXY_CODE, now
+            )
+            market_favorable = is_favorable_market(market_candles)
+            raw_signals = evaluate_signals(
+                candles_dict, market_candles, market_session_progress(now)
+            )
+            raw_signal_by_name = {sig["name"]: sig for sig in raw_signals}
+            dashboard_context.update({
+                "market_favorable": market_favorable,
+                "raw_signal_count": len(raw_signals),
+                "signal_statuses": [
+                    {
+                        "name": name,
+                        "active": name in raw_signal_by_name,
+                        "strategy": raw_signal_by_name.get(name, {}).get("strategy"),
+                        "count": signal_confirmations.get(
+                            (name, raw_signal_by_name.get(name, {}).get("strategy")), 0
+                        ) if name in raw_signal_by_name else 0,
+                    }
+                    for name in active_universe
+                ],
+            })
+
             if account.get("ok"):
                 dashboard_context["tradeability"] = build_tradeability(
                     active_universe, universe_metadata, candles_dict,
@@ -1024,13 +1062,7 @@ def run_trading_loop():
 
             loop_halted = trading_halted or account_lookup_failed
             if not loop_halted and is_entry_window(now) and len(positions) < MAX_POSITIONS:
-                market_candles = get_kiwoom_candles(
-                    api, realtime, daily_candle_cache, MARKET_PROXY_CODE, now
-                )
-                signals = evaluate_signals(
-                    candles_dict, market_candles, market_session_progress(now)
-                )
-                raw_signals = list(signals)
+                signals = list(raw_signals)
                 # 재기동 직후의 일시적/이미 끝난 신호 추격을 막는다. 동일 전략 신호가
                 # 30초 간격으로 3회 연속 유지될 때만 신규 주문 후보로 인정한다.
                 signals, signal_confirmations = confirm_persistent_signals(
@@ -1048,6 +1080,17 @@ def run_trading_loop():
                              (sig["name"], sig["strategy"]), 0
                          )}
                         for sig in raw_signals
+                    ],
+                    "signal_statuses": [
+                        {
+                            "name": name,
+                            "active": name in raw_signal_by_name,
+                            "strategy": raw_signal_by_name.get(name, {}).get("strategy"),
+                            "count": signal_confirmations.get(
+                                (name, raw_signal_by_name.get(name, {}).get("strategy")), 0
+                            ) if name in raw_signal_by_name else 0,
+                        }
+                        for name in active_universe
                     ],
                 })
                 # 주문 가격도 키움 실시간 체결가로 통일한다. 오래된 시세는 후보에서 제외한다.
@@ -1179,9 +1222,26 @@ def run_trading_loop():
                     if git_ok and not git_commit_and_push(f"매수 저격 체결: {', '.join(new_buys)}"):
                         trading_halted = True
                         risk_reasons.append("매수 체결 내역 GitHub push 실패")
+            else:
+                # 진입 판단을 건너뛴 루프는 연속 확인으로 인정하지 않는다.
+                signal_confirmations = {}
+                for item in dashboard_context.get("signal_statuses", []):
+                    item["count"] = 0
                     
             # 주문 처리 중 새 영구 안전잠금이 발생했을 수 있으므로 최종 상태를 다시 계산한다.
             loop_halted = trading_halted or account_lookup_failed
+            signal_snapshot = (
+                market_favorable,
+                tuple(
+                    (item.get("name"), item.get("active"), item.get("strategy"),
+                     item.get("count", 0))
+                    for item in dashboard_context.get("signal_statuses", [])
+                ),
+            )
+            if signal_snapshot != last_signal_snapshot:
+                dashboard_dirty = True
+                dashboard_critical = True
+                last_signal_snapshot = signal_snapshot
             print(f"[{now_str}] 감시 완료. 현재 보유 종목: {list(positions.keys())}")
             status, detail = build_operational_status(
                 loop_halted, risk_reasons, len(positions)

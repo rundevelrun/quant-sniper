@@ -27,7 +27,7 @@ class FakeResponse:
 
 
 class SafetyTests(unittest.TestCase):
-    def test_dashboard_keeps_seven_days_and_deduplicates_skips(self):
+    def test_dashboard_keeps_three_days_and_deduplicates_skips(self):
         import datetime
         now = datetime.datetime(2026, 11, 16, 10, 0)
         events = [{
@@ -57,7 +57,7 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("후보주", markdown)
         self.assertIn("+3.00%", markdown)
         self.assertIn("실시간 현재 상태 — 기간 제한 없음", markdown)
-        self.assertIn("최근 7일 활동", markdown)
+        self.assertIn("최근 3일 활동", markdown)
         self.assertIn("전체 누적 성과 — 전체 거래 이력", markdown)
         self.assertNotIn("계좌번호", markdown)
 
@@ -69,14 +69,25 @@ class SafetyTests(unittest.TestCase):
                 return True, ""
         markdown = render_dashboard(
             "running", "정규 감시 중", {}, Feed(), [],
-            context={"universe_symbols": [
-                {"name": "후보주", "code": "000001"},
-                {"name": "감시주", "code": "000002"},
-            ]},
+            context={
+                "market_favorable": True,
+                "universe_symbols": [
+                    {"name": "후보주", "code": "000001"},
+                    {"name": "감시주", "code": "000002"},
+                ],
+                "signal_statuses": [
+                    {"name": "후보주", "active": True,
+                     "strategy": "RSI 과매도 반등", "count": 2},
+                    {"name": "감시주", "active": False, "count": 0},
+                ],
+            },
         )
         self.assertIn("감시 종목 전체", markdown)
         self.assertIn("| 후보주 | `000001` |", markdown)
         self.assertIn("| 감시주 | `000002` |", markdown)
+        self.assertIn("🟢 상승 국면", markdown)
+        self.assertIn("🟢 RSI 과매도 반등 (2/3)", markdown)
+        self.assertIn("🔴 신호 없음", markdown)
 
     def test_position_size_obeys_allocation_and_trade_risk(self):
         # 30만원, 2만원 주식, 3% 손절: 30% 비중 한도는 4주, 위험 한도는 3주다.
