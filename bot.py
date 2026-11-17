@@ -238,21 +238,6 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             )
     else:
         lines.append("| - | - | - | - | - | - | - | - |")
-    lines += [
-        "", "#### 신호 확인 단계", "",
-        "| 종목 | 전략 | 연속 확인 |",
-        "|---|---|---:|",
-    ]
-    signal_progress = context.get("signal_progress", [])
-    if signal_progress:
-        for item in signal_progress:
-            lines.append(
-                f"| {_md(item.get('name'))} | {_md(item.get('strategy'))} "
-                f"| {int(item.get('count', 0))}/3 |"
-            )
-    else:
-        lines.append("| 현재 진행 중인 신호 없음 | - | - |")
-
     drawdown = context.get("account_drawdown_pct")
     daily_return = context.get("daily_return_pct")
     lines += [
