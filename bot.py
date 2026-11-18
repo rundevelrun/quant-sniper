@@ -608,6 +608,21 @@ def calculate_entry_shares(total_assets, cash, entry_price, stop_loss_pct,
     shares_by_cash = int(cash // entry_price)
     return max(0, min(shares_by_allocation, shares_by_risk, shares_by_cash))
 
+
+def screening_preferred_max_price(account):
+    """비우호장 50%·최대 손절폭에서도 1주 가능한 전일종가 상한을 계산한다."""
+    if not account.get("ok"):
+        return None
+    total_assets = float(account.get("total_assets") or 0)
+    cash = float(account.get("cash") or 0)
+    if min(total_assets, cash) <= 0:
+        return None
+    return min(
+        cash,
+        total_assets * MAX_ALLOC_PER_STOCK * 0.5,
+        total_assets * MAX_RISK_PER_TRADE_PCT * 0.5 / MAX_STOP_LOSS_PCT,
+    )
+
 def sector_limit_reached(candidate_sector, positions, universe_metadata,
                          max_per_sector=MAX_POSITIONS_PER_SECTOR):
     """미분류를 제외하고 동일 업종 보유 수가 상한에 도달했는지 확인한다."""
@@ -850,14 +865,17 @@ def run_trading_loop():
             screening_window = now.weekday() < 5 and now.hour == 8 and now.minute >= 30
             if DYNAMIC_SCREENING and last_screened_date != today_str and screening_window:
                 print(f"[{now_str}] 🔍 전일(D-1) 확정 거래대금 TOP 우량주 동적 스크리닝 가동...")
+                screening_account = api.get_account_snapshot()
+                preferred_max_price = screening_preferred_max_price(screening_account)
                 screened = api.get_previous_day_universe(
-                    SCREENER_TOP_N, MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW
+                    SCREENER_TOP_N, MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW,
+                    preferred_max_price,
                 )
                 if screened:
                     active_universe = screened
                     universe_metadata = api.last_universe_metadata
                     last_screened_date = today_str
-                    universe_source = "kiwoom_ka10031_query_type_2_previous_day_value"
+                    universe_source = "kiwoom_previous_day_value_affordability_priority"
                     save_json(UNIVERSE_FILE, {
                         "date": today_str, "symbols": screened,
                         "metadata": universe_metadata,
@@ -900,14 +918,17 @@ def run_trading_loop():
             )
             if intraday_bootstrap:
                 print(f"[{now_str}] 🔄 키움 전일 거래대금 기준 장중 유니버스 복구...")
+                screening_account = api.get_account_snapshot()
+                preferred_max_price = screening_preferred_max_price(screening_account)
                 screened = api.get_previous_day_universe(
-                    SCREENER_TOP_N, MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW
+                    SCREENER_TOP_N, MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW,
+                    preferred_max_price,
                 )
                 if screened:
                     active_universe = screened
                     universe_metadata = api.last_universe_metadata
                     last_screened_date = today_str
-                    universe_source = "kiwoom_ka10031_query_type_2_previous_day_value"
+                    universe_source = "kiwoom_previous_day_value_affordability_priority"
                     save_json(UNIVERSE_FILE, {
                         "date": today_str, "symbols": screened,
                         "metadata": universe_metadata,

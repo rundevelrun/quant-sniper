@@ -139,8 +139,9 @@ class KiwoomRestAPI:
         except Exception as exc:
             return {"return_code": -1, "return_msg": str(exc)}
 
-    def get_previous_day_universe(self, top_n, min_market_cap, max_market_cap):
-        """ka10031 조회구분 2의 전일 거래대금 순위와 전일 시총으로 유니버스를 만든다."""
+    def get_previous_day_universe(self, top_n, min_market_cap, max_market_cap,
+                                  preferred_max_price=None):
+        """전일 거래대금 후보를 걸러 소액 계좌가 살 수 있는 종목부터 배치한다."""
         ranking = self._post_domestic(
             "/api/dostk/rkinfo", "ka10031",
             {"mrkt_tp": "000", "qry_tp": "2", "rank_strt": "0",
@@ -150,9 +151,8 @@ class KiwoomRestAPI:
             print(f"[SCREENER ERR] 키움 전일 거래대금 순위 실패: {ranking.get('return_msg')}")
             return {}
 
-        selected = {}
-        metadata = {}
-        for item in ranking.get("pred_trde_qty_upper", []):
+        candidates = []
+        for rank, item in enumerate(ranking.get("pred_trde_qty_upper", [])):
             code = str(item.get("stk_cd", "")).lstrip("AJQ")[-6:]
             name = str(item.get("stk_nm", "")).strip()
             if not code or not name:
@@ -178,16 +178,22 @@ class KiwoomRestAPI:
             if unsafe_name or unsafe_state:
                 continue
             if min_market_cap <= previous_market_cap <= max_market_cap:
-                selected[name] = code
-                metadata[name] = {
+                candidates.append((name, code, {
                     "code": code,
                     "market": _market_name(info.get("marketName")),
                     "sector": str(info.get("upName", "")).strip() or "미분류",
                     "previous_close": previous_close,
                     "previous_market_cap": previous_market_cap,
-                }
-                if len(selected) >= top_n:
-                    break
+                    "trading_value_rank": rank + 1,
+                }))
+
+        if preferred_max_price and preferred_max_price > 0:
+            candidates.sort(key=lambda item: (
+                item[2]["previous_close"] > preferred_max_price,
+                item[2]["trading_value_rank"],
+            ))
+        selected = {name: code for name, code, _ in candidates[:top_n]}
+        metadata = {name: meta for name, _, meta in candidates[:top_n]}
         self.last_universe_metadata = metadata
         return selected
 

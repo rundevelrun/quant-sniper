@@ -12,6 +12,7 @@ from bot import (
     git_commit_and_push, is_entry_window,
     is_market_open, market_session_progress, save_json, trading_days_held,
     estimate_external_cash_flow, sector_limit_reached, time_stop_reason,
+    screening_preferred_max_price,
     update_dashboard_events, update_position_stop,
     render_dashboard,
 )
@@ -383,6 +384,33 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(universe, {"후보주": "000001"})
         self.assertEqual(api.last_universe_metadata["후보주"]["sector"], "반도체")
         self.assertEqual(api.last_universe_metadata["후보주"]["market"], "KOSPI")
+
+    def test_screener_prioritizes_affordable_candidate_without_dropping_rank(self):
+        with patch.object(config, "LIVE_TRADING_ENABLED", True):
+            api = KiwoomRestAPI("key", "secret", "account")
+        api._post_domestic = unittest.mock.Mock(side_effect=[
+            {"return_code": 0, "pred_trde_qty_upper": [
+                {"stk_cd": "000001", "stk_nm": "고가주"},
+                {"stk_cd": "000002", "stk_nm": "매수가능주"},
+            ]},
+            {"return_code": 0, "lastPrice": "80000", "listCount": "10000000",
+             "marketName": "KOSPI", "upName": "기계", "auditInfo": "",
+             "orderWarning": "0"},
+            {"return_code": 0, "lastPrice": "20000", "listCount": "30000000",
+             "marketName": "KOSDAQ", "upName": "화학", "auditInfo": "",
+             "orderWarning": "0"},
+        ])
+        universe = api.get_previous_day_universe(
+            2, 500_000_000_000, 5_000_000_000_000, 30000
+        )
+        self.assertEqual(list(universe), ["매수가능주", "고가주"])
+        self.assertEqual(api.last_universe_metadata["고가주"]["trading_value_rank"], 1)
+
+    def test_screening_price_cap_uses_unfavorable_risk_budget(self):
+        cap = screening_preferred_max_price({
+            "ok": True, "total_assets": 306170, "cash": 306170,
+        })
+        self.assertAlmostEqual(cap, 26789.875)
 
     def test_kiwoom_daily_candles_are_returned_oldest_first(self):
         with patch.object(config, "LIVE_TRADING_ENABLED", True):
