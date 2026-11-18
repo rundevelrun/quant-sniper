@@ -209,8 +209,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f"| {int(context.get('universe_count', 0))} | {int(context.get('raw_signal_count', 0))} "
         f"| {int(context.get('confirming_signal_count', 0))} | {int(context.get('confirmed_signal_count', 0))} |",
         "", "#### 감시 종목 전체", "",
-        "| 종목 | 코드 | 시장 | 업종 | 현재가 | 국면 반영 최대 수량 | 자금 조건 | 매수 신호 |",
-        "|---|---:|---|---|---:|---:|---|---|",
+        "| 종목 | 코드 | 시장 | 업종 | 현재가 | 우호장 최대 수량 | 비우호장 최대 수량 | 현재 자금 조건 | 매수 신호 |",
+        "|---|---:|---|---|---:|---:|---:|---|---|",
     ]
     universe_symbols = context.get("tradeability") or context.get("universe_symbols", [])
     signal_statuses = {
@@ -220,6 +220,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         for item in universe_symbols:
             price = item.get("price")
             max_shares = item.get("max_shares")
+            favorable_shares = item.get("favorable_max_shares", max_shares)
+            unfavorable_shares = item.get("unfavorable_max_shares", max_shares)
             eligibility = (
                 (
                     "가능 (비우호장 50%)"
@@ -242,11 +244,12 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 f"| {_md(item.get('market', '미분류'))} "
                 f"| {_md(item.get('sector', '미분류'))} "
                 f"| {f'{float(price):,.0f}원' if price else '-'} "
-                f"| {int(max_shares) if max_shares is not None else '-'} "
+                f"| {int(favorable_shares) if favorable_shares is not None else '-'} "
+                f"| {int(unfavorable_shares) if unfavorable_shares is not None else '-'} "
                 f"| {eligibility} | {signal_text} |"
             )
     else:
-        lines.append("| - | - | - | - | - | - | - | - |")
+        lines.append("| - | - | - | - | - | - | - | - | - |")
     drawdown = context.get("account_drawdown_pct")
     daily_return = context.get("daily_return_pct")
     lines += [
@@ -615,7 +618,6 @@ def build_tradeability(active_universe, universe_metadata, candles_dict,
             1.0 if market_regimes is None or market_regimes.get(market, True)
             else 0.5
         )
-        effective_multiplier = size_multiplier * regime_multiplier
         candles = candles_dict.get(name, [])
         price = float(candles[-1]["close"]) if candles else 0.0
         if price > 0:
@@ -624,9 +626,13 @@ def build_tradeability(active_universe, universe_metadata, candles_dict,
                 MIN_STOP_LOSS_PCT,
                 min(MAX_STOP_LOSS_PCT, atr / price * ATR_STOP_MULTIPLIER),
             )
-            shares = calculate_entry_shares(
-                total_assets, cash, price, stop_pct, effective_multiplier
+            favorable_shares = calculate_entry_shares(
+                total_assets, cash, price, stop_pct, size_multiplier
             )
+            unfavorable_shares = calculate_entry_shares(
+                total_assets, cash, price, stop_pct, size_multiplier * 0.5
+            )
+            shares = favorable_shares if regime_multiplier == 1.0 else unfavorable_shares
             if regime_multiplier < 1:
                 reason = (
                     "비우호장 50% 한도에서 가능" if shares > 0
@@ -637,6 +643,8 @@ def build_tradeability(active_universe, universe_metadata, candles_dict,
         else:
             stop_pct = None
             shares = 0
+            favorable_shares = 0
+            unfavorable_shares = 0
             reason = "가격 데이터 없음"
         results.append({
             "name": name, "code": code,
@@ -645,6 +653,8 @@ def build_tradeability(active_universe, universe_metadata, candles_dict,
             "price": price or None,
             "stop_loss_pct": stop_pct,
             "max_shares": shares,
+            "favorable_max_shares": favorable_shares,
+            "unfavorable_max_shares": unfavorable_shares,
             "market_size_multiplier": regime_multiplier,
             "eligible": shares > 0,
             "reason": reason,

@@ -176,6 +176,8 @@ class SafetyTests(unittest.TestCase):
         )
         self.assertEqual(result[0]["max_shares"], 1)
         self.assertEqual(result[0]["market_size_multiplier"], 0.5)
+        self.assertEqual(result[0]["favorable_max_shares"], 2)
+        self.assertEqual(result[0]["unfavorable_max_shares"], 1)
         self.assertEqual(result[1]["max_shares"], 0)
         self.assertIn("비우호장 50%", result[1]["reason"])
 
