@@ -161,6 +161,24 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse(result[1]["eligible"])
         self.assertEqual([item["name"] for item in result], ["가능주", "고가주"])
 
+    def test_tradeability_applies_unfavorable_market_half_size(self):
+        def candles(price):
+            return [{"open": price, "high": price, "low": price,
+                     "close": price, "vol": 1000} for _ in range(10)]
+        result = build_tradeability(
+            {"저가주": "000001", "중가주": "000002"},
+            {
+                "저가주": {"market": "KOSPI", "sector": "기계"},
+                "중가주": {"market": "KOSPI", "sector": "화학"},
+            },
+            {"저가주": candles(20000), "중가주": candles(35000)},
+            300000, 300000, 1.0, {"KOSPI": False},
+        )
+        self.assertEqual(result[0]["max_shares"], 1)
+        self.assertEqual(result[0]["market_size_multiplier"], 0.5)
+        self.assertEqual(result[1]["max_shares"], 0)
+        self.assertIn("비우호장 50%", result[1]["reason"])
+
     def test_equity_drawdown_slows_then_halts_entries(self):
         peak, drawdown, multiplier, halted = account_drawdown_controls(920000, 1000000)
         self.assertEqual(peak, 1000000)

@@ -209,7 +209,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f"| {int(context.get('universe_count', 0))} | {int(context.get('raw_signal_count', 0))} "
         f"| {int(context.get('confirming_signal_count', 0))} | {int(context.get('confirmed_signal_count', 0))} |",
         "", "#### 감시 종목 전체", "",
-        "| 종목 | 코드 | 시장 | 업종 | 현재가 | 최대 수량 | 자금 조건 | 매수 신호 |",
+        "| 종목 | 코드 | 시장 | 업종 | 현재가 | 국면 반영 최대 수량 | 자금 조건 | 매수 신호 |",
         "|---|---:|---|---|---:|---:|---|---|",
     ]
     universe_symbols = context.get("tradeability") or context.get("universe_symbols", [])
@@ -598,10 +598,18 @@ def sector_limit_reached(candidate_sector, positions, universe_metadata,
     return same_sector >= max_per_sector
 
 def build_tradeability(active_universe, universe_metadata, candles_dict,
-                       total_assets, cash, size_multiplier=1.0):
-    """현재가·ATR·계좌 한도로 분류하고 현재가가 낮은 순서로 반환한다."""
+                       total_assets, cash, size_multiplier=1.0,
+                       market_regimes=None):
+    """현재가·ATR·계좌·시장 국면 한도로 실제 주문 가능 수량을 산출한다."""
     results = []
     for name, code in active_universe.items():
+        meta = universe_metadata.get(name, {})
+        market = meta.get("market", "미분류")
+        regime_multiplier = (
+            1.0 if market_regimes is None or market_regimes.get(market, True)
+            else 0.5
+        )
+        effective_multiplier = size_multiplier * regime_multiplier
         candles = candles_dict.get(name, [])
         price = float(candles[-1]["close"]) if candles else 0.0
         if price > 0:
@@ -611,21 +619,27 @@ def build_tradeability(active_universe, universe_metadata, candles_dict,
                 min(MAX_STOP_LOSS_PCT, atr / price * ATR_STOP_MULTIPLIER),
             )
             shares = calculate_entry_shares(
-                total_assets, cash, price, stop_pct, size_multiplier
+                total_assets, cash, price, stop_pct, effective_multiplier
             )
-            reason = "1주 이상 가능" if shares > 0 else "1주가 투자/위험/현금 한도 초과"
+            if regime_multiplier < 1:
+                reason = (
+                    "비우호장 50% 한도에서 가능" if shares > 0
+                    else "비우호장 50% 투자/위험 한도에서 1주 초과"
+                )
+            else:
+                reason = "1주 이상 가능" if shares > 0 else "1주가 투자/위험/현금 한도 초과"
         else:
             stop_pct = None
             shares = 0
             reason = "가격 데이터 없음"
-        meta = universe_metadata.get(name, {})
         results.append({
             "name": name, "code": code,
-            "market": meta.get("market", "미분류"),
+            "market": market,
             "sector": meta.get("sector", "미분류"),
             "price": price or None,
             "stop_loss_pct": stop_pct,
             "max_shares": shares,
+            "market_size_multiplier": regime_multiplier,
             "eligible": shares > 0,
             "reason": reason,
         })
@@ -1093,6 +1107,7 @@ def run_trading_loop():
                     active_universe, universe_metadata, candles_dict,
                     float(account.get("total_assets") or 0),
                     float(account.get("cash") or 0), entry_size_multiplier,
+                    market_regimes,
                 )
                 
             # 2. 보유 포지션 감시 및 청산 체크 (동적 손절, 트레일링 스탑, 익절)
