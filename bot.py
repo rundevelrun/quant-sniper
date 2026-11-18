@@ -177,7 +177,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         market_label = (
             "🟢 상승 국면 — 신규 진입 검토 가능"
             if context.get("market_favorable")
-            else "🔴 비우호 국면 — 신규 진입 차단"
+            else "🔴 비우호 국면 — VBO 차단·강한 RSI만 50%"
         )
     lines = [
         "# Quant Sniper Dashboard", "",
@@ -200,7 +200,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
 
     lines += [
         "", "### 오늘의 감시 및 신호", "",
-        f"> 시장 진입 필터: **{market_label}**",
+        f"> 시장 국면: **{market_label}**  ",
+        "> 🟢 우호장: RSI·VBO 정상 크기 · 🔴 비우호장: VBO 차단, 강한 RSI 반등만 50%",
         "",
         "| 유니버스 기준일 | 데이터 출처 | 감시 종목 | 원신호 | 연속 확인 중 | 확정 신호 |",
         "|---|---|---:|---:|---:|---:|",
