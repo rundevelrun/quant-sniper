@@ -225,7 +225,9 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             )
             signal = signal_statuses.get(item.get("name"), {})
             signal_text = (
-                f"🟢 {_md(signal.get('strategy'))} ({int(signal.get('count', 0))}/3)"
+                f"🟢 {_md(signal.get('strategy'))}"
+                f"{' · 비우호장 50%' if float(signal.get('size_multiplier', 1.0)) < 1 else ''} "
+                f"({int(signal.get('count', 0))}/3)"
                 if signal.get("active") else "🔴 신호 없음"
             )
             lines.append(
@@ -1074,6 +1076,9 @@ def run_trading_loop():
                         "name": name,
                         "active": name in raw_signal_by_name,
                         "strategy": raw_signal_by_name.get(name, {}).get("strategy"),
+                        "size_multiplier": raw_signal_by_name.get(name, {}).get(
+                            "size_multiplier", 1.0
+                        ),
                         "count": signal_confirmations.get(
                             (name, raw_signal_by_name.get(name, {}).get("strategy")), 0
                         ) if name in raw_signal_by_name else 0,
@@ -1224,6 +1229,9 @@ def run_trading_loop():
                             "name": name,
                             "active": name in raw_signal_by_name,
                             "strategy": raw_signal_by_name.get(name, {}).get("strategy"),
+                            "size_multiplier": raw_signal_by_name.get(name, {}).get(
+                                "size_multiplier", 1.0
+                            ),
                             "count": signal_confirmations.get(
                                 (name, raw_signal_by_name.get(name, {}).get("strategy")), 0
                             ) if name in raw_signal_by_name else 0,
@@ -1246,7 +1254,11 @@ def run_trading_loop():
                         )
                         dashboard_dirty = True
                 signals = live_signals
-                cash = api.get_cash_balance()
+                # 계좌 스냅샷의 현금을 재사용하고, 실제 주문 후보가 있을 때만
+                # kt00001을 강제 갱신해 30초 루프의 중복 호출을 피한다.
+                cash = float(account.get("cash") or 0)
+                if signals:
+                    cash = api.get_cash_balance(force_refresh=True)
                 total_assets = float(account.get("total_assets") or (
                     cash + sum(p["shares"] * p["buy_price"] for p in positions.values())
                 ))
@@ -1283,7 +1295,7 @@ def run_trading_loop():
                     stop_loss_pct = float(sig.get("stop_loss_pct", STOP_LOSS_PCT))
                     shares = calculate_entry_shares(
                         total_assets, cash, entry_p, stop_loss_pct,
-                        entry_size_multiplier,
+                        entry_size_multiplier * float(sig.get("size_multiplier", 1.0)),
                     )
                     if shares < 1:
                         print(f"[{now_str}] [SKIP] {name}: 1주가 투자/위험 한도를 초과")

@@ -49,11 +49,23 @@ class StrategyFilterTests(unittest.TestCase):
         self.assertEqual(signals[0]["strategy"], "변동성 돌파 (추세)")
         self.assertEqual(signals[0]["entry_price"], candles[-1]["close"])
 
-    def test_unfavorable_market_blocks_all_entries(self):
+    def test_unfavorable_market_allows_half_size_rsi_recovery(self):
         candles = [candle(130 - i, vol=1000) for i in range(29)]
-        candles.append(candle(107, open_price=103, high=108, low=102, vol=2000))
+        candles.append(candle(108, open_price=103, high=109, low=102, vol=2000))
         falling = [candle(200 - i) for i in range(70)]
-        self.assertEqual(evaluate_signals({"후보": candles}, falling), [])
+        signals = evaluate_signals({"후보": candles}, falling)
+        self.assertEqual(len(signals), 1)
+        self.assertEqual(signals[0]["strategy"], "RSI 과매도 반등")
+        self.assertEqual(signals[0]["size_multiplier"], 0.5)
+
+    def test_unfavorable_market_still_blocks_vbo(self):
+        candles = [candle(100 + i * 0.2, vol=1000) for i in range(29)]
+        prev = candles[-1]
+        target = 106.0 + (prev["high"] - prev["low"]) * 0.5
+        candles.append(candle(target + 1, open_price=106.0,
+                              high=target + 1.2, low=105.8, vol=2000))
+        falling = [candle(200 - i) for i in range(70)]
+        self.assertEqual(evaluate_signals({"돌파주": candles}, falling), [])
 
 
 if __name__ == "__main__":

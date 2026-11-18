@@ -39,6 +39,9 @@ class KiwoomRestAPI:
         self.token = None
         self.token_expiry = 0
         self.last_universe_metadata = {}
+        self.cash_balance_cache = None
+        self.cash_balance_cache_at = 0.0
+        self.cash_balance_cache_ttl = 60.0
 
         missing = [name for name, value in (
             ("KIWOOM_APP_KEY", self.app_key),
@@ -82,8 +85,15 @@ class KiwoomRestAPI:
             print(f"[ERR] 토큰 발급 실패: {e}")
             return None
 
-    def get_cash_balance(self):
-        """계좌 예수금(주문 가능 현금) 조회 (kt00001)"""
+    def get_cash_balance(self, force_refresh=False):
+        """계좌 예수금 조회. 반복 감시 중에는 캐시로 kt00001 호출을 제한한다."""
+        now = time.time()
+        if (
+            not force_refresh
+            and self.cash_balance_cache is not None
+            and now - self.cash_balance_cache_at < self.cash_balance_cache_ttl
+        ):
+            return self.cash_balance_cache
         token = self.get_token()
         if not token:
             return 0.0
@@ -101,10 +111,13 @@ class KiwoomRestAPI:
         try:
             with urllib.request.urlopen(req, timeout=10) as r:
                 data = json.loads(r.read().decode("utf-8"))
-                return _number(data.get("ord_alow_amt", data.get("entr", 0.0)))
+                balance = _number(data.get("ord_alow_amt", data.get("entr", 0.0)))
+                self.cash_balance_cache = balance
+                self.cash_balance_cache_at = now
+                return balance
         except Exception as e:
             print(f"[ERR] 예수금 조회 실패: {e}")
-            return 0.0
+            return self.cash_balance_cache if self.cash_balance_cache is not None else 0.0
 
     def _post_domestic(self, path, api_id, body):
         """국내주식 조회 TR 공통 호출. 실패 시 원인을 포함한 dict를 반환한다."""

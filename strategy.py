@@ -69,8 +69,7 @@ def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0):
     2. 진입 시 손절폭과 기준 보상폭을 기록하고 실제 청산은 봇의 고점 추적으로 수행
     """
     candidates = []
-    if not is_favorable_market(market_candles):
-        return candidates
+    favorable_market = is_favorable_market(market_candles)
     
     for name, candles in candles_dict.items():
         if len(candles) < 25:
@@ -134,6 +133,9 @@ def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0):
             candidates.append({
                 "name": name,
                 "strategy": "RSI 과매도 반등",
+                # 비우호장에서는 충분히 확인된 역추세 반등만 절반 크기로 허용한다.
+                "size_multiplier": 1.0 if favorable_market else 0.5,
+                "market_favorable": favorable_market,
                 "score": rsi,
                 "entry_price": entry_p,
                 "rsi": round(rsi, 1),
@@ -142,7 +144,7 @@ def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0):
                 "stop_loss_pct": round(dynamic_stop_pct, 4),
                 "take_profit_pct": round(dynamic_take_profit_pct, 4)
             })
-        elif is_vbo_signal:
+        elif is_vbo_signal and favorable_market:
             # 시장가 주문 수량은 이미 지나간 돌파선이 아니라 현재가로 산정한다.
             entry_p = curr["close"]
             atr_pct = (atr / entry_p) if entry_p > 0 else 0.03

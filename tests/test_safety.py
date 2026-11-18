@@ -313,6 +313,20 @@ class SafetyTests(unittest.TestCase):
         self.assertIsInstance(balance, float)
 
     @patch("urllib.request.urlopen")
+    def test_cash_balance_uses_cache_until_forced(self, urlopen):
+        urlopen.side_effect = [
+            FakeResponse({"ord_alow_amt": "100000"}),
+            FakeResponse({"ord_alow_amt": "120000"}),
+        ]
+        with patch.object(config, "LIVE_TRADING_ENABLED", True):
+            api = KiwoomRestAPI("key", "secret", "account")
+        api.get_token = lambda: "token"
+        self.assertEqual(api.get_cash_balance(), 100000.0)
+        self.assertEqual(api.get_cash_balance(), 100000.0)
+        self.assertEqual(api.get_cash_balance(force_refresh=True), 120000.0)
+        self.assertEqual(urlopen.call_count, 2)
+
+    @patch("urllib.request.urlopen")
     def test_execution_uses_weighted_actual_fill_price(self, urlopen):
         urlopen.return_value = FakeResponse({
             "return_code": 0,
