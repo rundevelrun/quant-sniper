@@ -209,12 +209,15 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f"| {int(context.get('universe_count', 0))} | {int(context.get('raw_signal_count', 0))} "
         f"| {int(context.get('confirming_signal_count', 0))} | {int(context.get('confirmed_signal_count', 0))} |",
         "", "#### 감시 종목 전체", "",
-        "| 종목 | 코드 | 시장 | 업종 | 현재가 | 우호장 최대 수량 | 비우호장 최대 수량 | 현재 자금 조건 | 매수 신호 |",
-        "|---|---:|---|---|---:|---:|---:|---|---|",
+        "| 종목 | 코드 | 시장 | 업종 | 현재가 | 우호장 최대 수량 | 비우호장 최대 수량 | 현재 자금 조건 | 직전 RSI | 현재 RSI | 진입 차단 사유 | 매수 신호 |",
+        "|---|---:|---|---|---:|---:|---:|---|---:|---:|---|---|",
     ]
     universe_symbols = context.get("tradeability") or context.get("universe_symbols", [])
     signal_statuses = {
         item.get("name"): item for item in context.get("signal_statuses", [])
+    }
+    signal_diagnostics = {
+        item.get("name"): item for item in context.get("signal_diagnostics", [])
     }
     if universe_symbols:
         for item in universe_symbols:
@@ -233,6 +236,13 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 if "eligible" in item else "계산 대기"
             )
             signal = signal_statuses.get(item.get("name"), {})
+            diagnostic = signal_diagnostics.get(item.get("name"), {})
+            previous_rsi = diagnostic.get("previous_rsi")
+            current_rsi = diagnostic.get("rsi")
+            blockers = (
+                f"RSI: {_md(diagnostic.get('rsi_blocker', '계산 대기'))} · "
+                f"VBO: {_md(diagnostic.get('vbo_blocker', '계산 대기'))}"
+            )
             signal_text = (
                 f"🟢 {_md(signal.get('strategy'))}"
                 f"{' · 비우호장 50%' if float(signal.get('size_multiplier', 1.0)) < 1 else ''} "
@@ -246,10 +256,13 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 f"| {f'{float(price):,.0f}원' if price else '-'} "
                 f"| {int(favorable_shares) if favorable_shares is not None else '-'} "
                 f"| {int(unfavorable_shares) if unfavorable_shares is not None else '-'} "
-                f"| {eligibility} | {signal_text} |"
+                f"| {eligibility} "
+                f"| {f'{float(previous_rsi):.1f}' if previous_rsi is not None else '-'} "
+                f"| {f'{float(current_rsi):.1f}' if current_rsi is not None else '-'} "
+                f"| {blockers} | {signal_text} |"
             )
     else:
-        lines.append("| - | - | - | - | - | - | - | - | - |")
+        lines.append("| - | - | - | - | - | - | - | - | - | - | - | - |")
     drawdown = context.get("account_drawdown_pct")
     daily_return = context.get("daily_return_pct")
     lines += [
@@ -383,6 +396,7 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
         "market_favorable": bool(render_context.get("market_favorable", False)),
         "market_regimes": render_context.get("market_regimes", {}),
         "signal_statuses": render_context.get("signal_statuses", []),
+        "signal_diagnostics": render_context.get("signal_diagnostics", []),
         "raw_signal_count": render_context.get("raw_signal_count", 0),
         "confirming_signal_count": render_context.get("confirming_signal_count", 0),
         "confirmed_signal_count": render_context.get("confirmed_signal_count", 0),
@@ -1090,10 +1104,13 @@ def run_trading_loop():
                 if name in kosdaq_names
             }
             progress = market_session_progress(now)
+            signal_diagnostics = {}
             raw_signals = evaluate_signals(
-                kospi_candles, kospi_market_candles, progress
+                kospi_candles, kospi_market_candles, progress,
+                signal_diagnostics,
             ) + evaluate_signals(
-                kosdaq_candles, kosdaq_market_candles, progress
+                kosdaq_candles, kosdaq_market_candles, progress,
+                signal_diagnostics,
             )
             raw_signals.sort(key=lambda item: item["score"])
             market_favorable = any(market_regimes.values())
@@ -1102,6 +1119,10 @@ def run_trading_loop():
                 "market_favorable": market_favorable,
                 "market_regimes": market_regimes,
                 "raw_signal_count": len(raw_signals),
+                "signal_diagnostics": [
+                    {"name": name, **signal_diagnostics.get(name, {})}
+                    for name in active_universe
+                ],
                 "signal_statuses": [
                     {
                         "name": name,

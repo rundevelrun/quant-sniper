@@ -59,7 +59,8 @@ def calculate_atr(candles, period=ATR_PERIOD):
         
     return sum(tr_list[-period:]) / period
 
-def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0):
+def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0,
+                     diagnostics=None):
     """
     전 종목의 캔들 데이터를 분석하여 매수 신호 탐색 및 우선순위 랭킹 반환
     candles_dict: {name: [{"open", "high", "low", "close", "vol"}, ...]}
@@ -73,6 +74,12 @@ def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0):
     
     for name, candles in candles_dict.items():
         if len(candles) < 25:
+            if diagnostics is not None:
+                diagnostics[name] = {
+                    "rsi": None, "previous_rsi": None,
+                    "rsi_blocker": "캔들 부족",
+                    "vbo_blocker": "캔들 부족",
+                }
             continue
             
         closes = [c["close"] for c in candles]
@@ -121,6 +128,44 @@ def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0):
             volume_confirmed and
             price_quality_ok
         )
+
+        if diagnostics is not None:
+            if is_rsi_signal:
+                rsi_blocker = "충족"
+            elif prev_rsi > RSI_BUY_THRESHOLD:
+                rsi_blocker = f"직전 RSI {prev_rsi:.1f}>28"
+            elif rsi <= RSI_RECOVERY_THRESHOLD:
+                rsi_blocker = f"현재 RSI {rsi:.1f}≤30"
+            elif curr["close"] <= curr["open"]:
+                rsi_blocker = "양봉 아님"
+            elif curr["close"] <= prev["high"]:
+                rsi_blocker = "전일 고가 미돌파"
+            else:
+                rsi_blocker = "가격 품질 기준 미달"
+
+            if not favorable_market:
+                vbo_blocker = "시장 비우호"
+            elif curr["close"] < target_price:
+                vbo_blocker = "돌파가 미도달"
+            elif curr["close"] <= curr["open"]:
+                vbo_blocker = "양봉 아님"
+            elif curr["close"] <= ma20:
+                vbo_blocker = "20일선 아래"
+            elif ma20 <= prev_ma20:
+                vbo_blocker = "20일선 하락"
+            elif not volume_confirmed:
+                vbo_blocker = "거래량 부족"
+            elif not price_quality_ok:
+                vbo_blocker = "가격 품질 기준 미달"
+            else:
+                vbo_blocker = "충족"
+
+            diagnostics[name] = {
+                "rsi": round(rsi, 1),
+                "previous_rsi": round(prev_rsi, 1),
+                "rsi_blocker": rsi_blocker,
+                "vbo_blocker": vbo_blocker,
+            }
         
         if is_rsi_signal:
             entry_p = curr["close"]

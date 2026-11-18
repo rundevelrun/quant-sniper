@@ -67,6 +67,15 @@ class StrategyFilterTests(unittest.TestCase):
         falling = [candle(200 - i) for i in range(70)]
         self.assertEqual(evaluate_signals({"돌파주": candles}, falling), [])
 
+    def test_signal_diagnostics_explains_both_entry_paths(self):
+        candles = [candle(100 + i, vol=1000) for i in range(30)]
+        falling = [candle(200 - i) for i in range(70)]
+        diagnostics = {}
+        evaluate_signals({"진단주": candles}, falling, diagnostics=diagnostics)
+        self.assertGreater(diagnostics["진단주"]["rsi"], 28)
+        self.assertIn("직전 RSI", diagnostics["진단주"]["rsi_blocker"])
+        self.assertEqual(diagnostics["진단주"]["vbo_blocker"], "시장 비우호")
+
 
 if __name__ == "__main__":
     unittest.main()
