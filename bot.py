@@ -201,7 +201,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     lines += [
         "", "### 오늘의 감시 및 신호", "",
         f"> 시장 국면: **{market_label}**  ",
-        "> 🟢 우호장: RSI·VBO 정상 크기 · 🔴 비우호장: VBO 차단, 강한 RSI 반등만 50%",
+        "> 우호장: RSI·VBO 정상 크기 · 비우호장: VBO 차단, 강한 RSI 반등만 50%",
         "",
         "| 유니버스 기준일 | 데이터 출처 | 감시 종목 | 원신호 | 연속 확인 중 | 확정 신호 |",
         "|---|---|---:|---:|---:|---:|",
