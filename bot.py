@@ -10,7 +10,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 from config import (
-    DYNAMIC_SCREENING, SCREENER_TOP_N, DEFAULT_UNIVERSE,
+    DYNAMIC_SCREENING, SCREENER_TOP_N, SCREENER_RANK_POOL, DEFAULT_UNIVERSE,
     STOP_LOSS_PCT, TRAILING_STOP_TRIGGER, TRAILING_STOP_LOCK,
     TAKE_PROFIT_PCT, MAX_HOLD_DAYS, MAX_PROFIT_HOLD_DAYS,
     MAX_ALLOC_PER_STOCK, MAX_POSITIONS,
@@ -869,7 +869,7 @@ def run_trading_loop():
                 preferred_max_price = screening_preferred_max_price(screening_account)
                 screened = api.get_previous_day_universe(
                     SCREENER_TOP_N, MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW,
-                    preferred_max_price,
+                    preferred_max_price, SCREENER_RANK_POOL,
                 )
                 if screened:
                     active_universe = screened
@@ -922,7 +922,7 @@ def run_trading_loop():
                 preferred_max_price = screening_preferred_max_price(screening_account)
                 screened = api.get_previous_day_universe(
                     SCREENER_TOP_N, MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW,
-                    preferred_max_price,
+                    preferred_max_price, SCREENER_RANK_POOL,
                 )
                 if screened:
                     active_universe = screened

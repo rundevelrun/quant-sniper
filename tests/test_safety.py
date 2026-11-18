@@ -375,6 +375,9 @@ class SafetyTests(unittest.TestCase):
             {"return_code": 0, "lastPrice": "20000", "listCount": "100000000",
              "marketName": "KOSPI", "upName": "반도체", "auditInfo": "",
              "orderWarning": "0"},
+            {"return_code": 0, "stk_dt_pole_chart_qry": [
+                {"dt": "20260101", "trde_prica": "500000"},
+            ]},
             {"return_code": 0, "lastPrice": "30000", "listCount": "100000000",
              "marketName": "ETF", "auditInfo": "", "orderWarning": "0"},
         ])
@@ -396,9 +399,15 @@ class SafetyTests(unittest.TestCase):
             {"return_code": 0, "lastPrice": "80000", "listCount": "10000000",
              "marketName": "KOSPI", "upName": "기계", "auditInfo": "",
              "orderWarning": "0"},
+            {"return_code": 0, "stk_dt_pole_chart_qry": [
+                {"dt": "20260101", "trde_prica": "900000"},
+            ]},
             {"return_code": 0, "lastPrice": "20000", "listCount": "30000000",
              "marketName": "KOSDAQ", "upName": "화학", "auditInfo": "",
              "orderWarning": "0"},
+            {"return_code": 0, "stk_dt_pole_chart_qry": [
+                {"dt": "20260101", "trde_prica": "500000"},
+            ]},
         ])
         universe = api.get_previous_day_universe(
             2, 500_000_000_000, 5_000_000_000_000, 30000

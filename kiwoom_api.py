@@ -140,19 +140,33 @@ class KiwoomRestAPI:
             return {"return_code": -1, "return_msg": str(exc)}
 
     def get_previous_day_universe(self, top_n, min_market_cap, max_market_cap,
-                                  preferred_max_price=None):
-        """전일 거래대금 후보를 걸러 소액 계좌가 살 수 있는 종목부터 배치한다."""
-        ranking = self._post_domestic(
-            "/api/dostk/rkinfo", "ka10031",
-            {"mrkt_tp": "000", "qry_tp": "2", "rank_strt": "0",
-             "rank_end": "100", "stex_tp": "1"},
-        )
-        if ranking.get("return_code") != 0:
-            print(f"[SCREENER ERR] 키움 전일 거래대금 순위 실패: {ranking.get('return_msg')}")
-            return {}
+                                  preferred_max_price=None, rank_pool=100):
+        """전일 거래량 풀을 전일 실제 거래대금으로 재정렬하고 매수 가능 종목을 우선한다."""
+        ranking_items = []
+        ranges = [(0, 100)]
+        ranges.extend((start, start + 99) for start in range(101, rank_pool, 100))
+        for start, end in ranges:
+            ranking = self._post_domestic(
+                "/api/dostk/rkinfo", "ka10031",
+                {"mrkt_tp": "000", "qry_tp": "2", "rank_strt": str(start),
+                 "rank_end": str(min(end, rank_pool)), "stex_tp": "1"},
+            )
+            if ranking.get("return_code") != 0:
+                print(f"[SCREENER ERR] 키움 전일 거래량 순위 실패: {ranking.get('return_msg')}")
+                return {}
+            ranking_items.extend(ranking.get("pred_trde_qty_upper", []))
+
+        deduplicated = []
+        seen_codes = set()
+        for item in ranking_items:
+            code = str(item.get("stk_cd", "")).lstrip("AJQ")[-6:]
+            if code and code not in seen_codes:
+                seen_codes.add(code)
+                deduplicated.append(item)
 
         candidates = []
-        for rank, item in enumerate(ranking.get("pred_trde_qty_upper", [])):
+        today = time.strftime("%Y%m%d")
+        for rank, item in enumerate(deduplicated):
             code = str(item.get("stk_cd", "")).lstrip("AJQ")[-6:]
             name = str(item.get("stk_nm", "")).strip()
             if not code or not name:
@@ -178,20 +192,40 @@ class KiwoomRestAPI:
             if unsafe_name or unsafe_state:
                 continue
             if min_market_cap <= previous_market_cap <= max_market_cap:
+                daily = self._post_domestic(
+                    "/api/dostk/chart", "ka10081",
+                    {"stk_cd": code, "base_dt": today, "upd_stkpc_tp": "1"},
+                )
+                time.sleep(0.22)
+                completed_rows = [
+                    row for row in daily.get("stk_dt_pole_chart_qry", [])
+                    if str(row.get("dt", "")) < today
+                ]
+                previous_trading_value = abs(_number(
+                    completed_rows[0].get("trde_prica")
+                    if completed_rows else 0
+                ))
+                if previous_trading_value <= 0:
+                    previous_trading_value = previous_close * abs(
+                        _number(item.get("trde_qty"))
+                    )
                 candidates.append((name, code, {
                     "code": code,
                     "market": _market_name(info.get("marketName")),
                     "sector": str(info.get("upName", "")).strip() or "미분류",
                     "previous_close": previous_close,
                     "previous_market_cap": previous_market_cap,
+                    "previous_trading_value": previous_trading_value,
                     "trading_value_rank": rank + 1,
                 }))
 
         if preferred_max_price and preferred_max_price > 0:
             candidates.sort(key=lambda item: (
                 item[2]["previous_close"] > preferred_max_price,
-                item[2]["trading_value_rank"],
+                -item[2]["previous_trading_value"],
             ))
+        else:
+            candidates.sort(key=lambda item: -item[2]["previous_trading_value"])
         selected = {name: code for name, code, _ in candidates[:top_n]}
         metadata = {name: meta for name, _, meta in candidates[:top_n]}
         self.last_universe_metadata = metadata
