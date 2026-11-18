@@ -221,7 +221,13 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             price = item.get("price")
             max_shares = item.get("max_shares")
             eligibility = (
-                ("가능" if item.get("eligible") else _md(item.get("reason", "불가")))
+                (
+                    "가능 (비우호장 50%)"
+                    if item.get("eligible") and float(item.get("market_size_multiplier", 1.0)) < 1
+                    else "가능"
+                    if item.get("eligible")
+                    else _md(item.get("reason", "불가"))
+                )
                 if "eligible" in item else "계산 대기"
             )
             signal = signal_statuses.get(item.get("name"), {})
