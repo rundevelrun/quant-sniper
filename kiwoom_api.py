@@ -55,7 +55,7 @@ def _mixed_universe_candidates(candidates, top_n, preferred_max_price=None):
         return (affordable(item), band, distance,
                 -item[2]["previous_trading_value"])
 
-    rsi_count = min(top_n, round(top_n * 0.6))
+    rsi_count = min(top_n, 15, round(top_n * 0.6))
     eligible_rsi = [
         item for item in candidates
         if item[2].get("previous_rsi") is not None

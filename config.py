@@ -12,7 +12,7 @@ ORDER_CONFIRM_TIMEOUT_SECONDS = int(os.getenv("ORDER_CONFIRM_TIMEOUT_SECONDS", "
 
 # 동적 스크리닝 활성화 여부
 DYNAMIC_SCREENING = True
-SCREENER_TOP_N = 20
+SCREENER_TOP_N = 30
 SCREENER_RANK_POOL = 300       # 전일 거래량 상위 300개에서 실제 전일 거래대금 재정렬
 MIN_MARKET_CAP_KRW = 500_000_000_000 # 시가총액 최소 5천억 원: 소액 계좌의 매수 가능 후보 확대
 MAX_MARKET_CAP_KRW = 5_000_000_000_000 # 🛡️ 시가총액 최대 5조 원 이하 (굼뜬 10조+ 메가캡 배제, 탄력적 황금구간)

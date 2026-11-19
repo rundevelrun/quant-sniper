@@ -97,6 +97,37 @@ class SafetyTests(unittest.TestCase):
             3,
         )
 
+    def test_thirty_symbol_universe_caps_rsi_bucket_at_fifteen(self):
+        candidates = []
+        for index in range(20):
+            candidates.append((f"RSI{index}", f"4{index:05d}", {
+                "previous_close": 10000,
+                "previous_trading_value": 2000000 - index,
+                "previous_rsi": 21.0,
+                "vbo_trend_ready": False,
+            }))
+        for index in range(20):
+            candidates.append((f"VBO{index}", f"5{index:05d}", {
+                "previous_close": 10000,
+                "previous_trading_value": 1000000 - index,
+                "previous_rsi": 50.0,
+                "vbo_trend_ready": True,
+            }))
+
+        selected = _mixed_universe_candidates(candidates, 30, 30000)
+
+        self.assertEqual(len(selected), 30)
+        self.assertEqual(
+            sum(item[2]["screening_bucket"] == "RSI 반등 대기"
+                for item in selected),
+            15,
+        )
+        self.assertEqual(
+            sum(item[2]["screening_bucket"] == "VBO 준비"
+                for item in selected),
+            15,
+        )
+
     def test_dashboard_heartbeat_uses_fixed_half_hour_slots(self):
         before_first_slot = datetime.datetime(2026, 11, 19, 9, 0, 9)
         first_slot = datetime.datetime(2026, 11, 19, 9, 0, 10)
