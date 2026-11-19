@@ -75,8 +75,9 @@ SLIPPAGE_ESTIMATE_PCT = 0.0010 # 시장가 진입/청산 슬리피지 0.10% 보�
 TOTAL_ROUNDTRIP_COST_PCT = TRANSACTION_TAX_PCT + (BROKER_COMMISSION_PCT * 2) + (SLIPPAGE_ESTIMATE_PCT * 2) # 왕복 총비용 약 0.41%
 
 # 자금 관리 규칙
-MAX_ALLOC_PER_STOCK = 0.30     # 1종목당 계좌 총자산의 최대 30%
-MAX_POSITIONS = 3              # 최대 동시 보유 종목 수 (최소 10% 현금 버퍼 유지)
+MAX_ALLOC_PER_STOCK = 0.35     # 1종목당 계좌 총자산의 최대 35%
+MAX_POSITIONS = 5              # 최대 동시 보유 종목 수
+MAX_TOTAL_EXPOSURE_PCT = 0.90  # 전체 투자금은 총자산의 90% 이내(현금 10% 유지)
 MAX_POSITIONS_PER_SECTOR = 2   # 동일 업종 동시 보유 상한
 MAX_RISK_PER_TRADE_PCT = 0.007 # 1회 거래의 계획 손실을 계좌 자산 0.7% 이내로 제한
 EQUITY_SLOWDOWN_DRAWDOWN_PCT = 0.08 # 계좌 고점 대비 -8%부터 신규 주문 크기 절반

@@ -9,6 +9,7 @@ import config
 from bot import (
     account_drawdown_controls, account_snapshot_baseline, build_tradeability,
     calculate_entry_shares,
+    entry_cash_after_reserve,
     build_operational_status, confirm_persistent_signals, dashboard_status_label,
     is_dashboard_heartbeat_due,
     git_commit_and_push, is_entry_window,
@@ -213,14 +214,19 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("계좌 조회 실패", markdown)
 
     def test_position_size_obeys_allocation_and_trade_risk(self):
-        # 30만원, 2만원 주식, 3% 손절: 30% 비중 한도는 4주, 위험 한도는 3주다.
+        # 30만원, 2만원 주식, 3% 손절: 35% 비중 한도는 5주, 위험 한도는 3주다.
         self.assertEqual(calculate_entry_shares(300000, 300000, 20000, 0.03), 3)
-        # 7만원 1주는 30% 비중과 거래당 위험 0.7%를 모두 충족한다.
+        # 7만원 1주는 35% 비중과 거래당 위험 0.7%를 모두 충족한다.
         self.assertEqual(calculate_entry_shares(300000, 300000, 70000, 0.03), 1)
-        # 1주가 30% 비중 및 위험 한도를 넘으면 강제 1주 주문을 만들지 않는다.
+        # 1주가 거래당 위험 한도를 넘으면 강제 1주 주문을 만들지 않는다.
         self.assertEqual(calculate_entry_shares(300000, 300000, 100000, 0.03), 0)
         # -8% 감속 구간에서는 신규 주문 수량이 절반 수준으로 줄어든다.
         self.assertEqual(calculate_entry_shares(300000, 300000, 20000, 0.03, 0.5), 1)
+
+    def test_entry_cash_keeps_ten_percent_account_reserve(self):
+        self.assertEqual(entry_cash_after_reserve(300000, 300000), 270000)
+        self.assertAlmostEqual(entry_cash_after_reserve(300000, 50000), 20000)
+        self.assertEqual(entry_cash_after_reserve(300000, 25000), 0)
 
     def test_sector_limit_allows_two_but_blocks_third_position(self):
         metadata = {

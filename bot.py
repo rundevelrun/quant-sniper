@@ -22,7 +22,7 @@ from config import (
     MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW, MAX_RISK_PER_TRADE_PCT,
     EQUITY_SLOWDOWN_DRAWDOWN_PCT, EQUITY_HALT_DRAWDOWN_PCT,
     MAX_POSITIONS_PER_SECTOR, ATR_STOP_MULTIPLIER,
-    MIN_STOP_LOSS_PCT, MAX_STOP_LOSS_PCT
+    MIN_STOP_LOSS_PCT, MAX_STOP_LOSS_PCT, MAX_TOTAL_EXPOSURE_PCT
 )
 from strategy import calculate_atr, evaluate_signals, is_favorable_market
 from kiwoom_api import KiwoomRestAPI
@@ -619,6 +619,11 @@ def calculate_entry_shares(total_assets, cash, entry_price, stop_loss_pct,
     shares_by_risk = int(risk_budget // risk_per_share)
     shares_by_cash = int(cash // entry_price)
     return max(0, min(shares_by_allocation, shares_by_risk, shares_by_cash))
+
+def entry_cash_after_reserve(total_assets, cash):
+    """총자산의 10% 현금 버퍼를 제외하고 신규 주문에 쓸 수 있는 금액."""
+    reserve = total_assets * (1.0 - MAX_TOTAL_EXPOSURE_PCT)
+    return max(0.0, cash - reserve)
 
 
 def screening_preferred_max_price(account):
@@ -1385,7 +1390,8 @@ def run_trading_loop():
                     entry_p = sig["entry_price"]
                     stop_loss_pct = float(sig.get("stop_loss_pct", STOP_LOSS_PCT))
                     shares = calculate_entry_shares(
-                        total_assets, cash, entry_p, stop_loss_pct,
+                        total_assets, entry_cash_after_reserve(total_assets, cash),
+                        entry_p, stop_loss_pct,
                         entry_size_multiplier * float(sig.get("size_multiplier", 1.0)),
                     )
                     if shares < 1:
