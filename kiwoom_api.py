@@ -35,7 +35,7 @@ def _completed_daily_metrics(rows):
     return previous_rsi, trend_ready
 
 def _mixed_universe_candidates(candidates, top_n, preferred_max_price=None):
-    """RSI 반등 대기 60%, VBO 준비 40%의 혼합 유니버스를 만든다."""
+    """RSI<=28을 최대 60% 선발하고 부족한 자리는 VBO 후보로 채운다."""
     if not candidates or top_n <= 0:
         return []
 
@@ -47,22 +47,21 @@ def _mixed_universe_candidates(candidates, top_n, preferred_max_price=None):
 
     def rsi_key(item):
         rsi = item[2].get("previous_rsi")
-        if rsi is None:
-            return (affordable(item), 3, 999.0,
-                    -item[2]["previous_trading_value"])
-        # 전략 임계값(28) 직전의 20~28 구간을 우선하고 극단 과매도와
-        # 임계값을 조금 넘은 후보를 차례로 보충한다.
+        # 20~28 구간을 우선하고, 20 미만의 극단 과매도는 그다음으로 둔다.
         if 20.0 <= rsi <= 28.0:
             band, distance = 0, 28.0 - rsi
-        elif rsi < 20.0:
-            band, distance = 1, 20.0 - rsi
         else:
-            band, distance = 2, rsi - 28.0
+            band, distance = 1, 20.0 - rsi
         return (affordable(item), band, distance,
                 -item[2]["previous_trading_value"])
 
     rsi_count = min(top_n, round(top_n * 0.6))
-    rsi_selected = sorted(candidates, key=rsi_key)[:rsi_count]
+    eligible_rsi = [
+        item for item in candidates
+        if item[2].get("previous_rsi") is not None
+        and item[2]["previous_rsi"] <= 28.0
+    ]
+    rsi_selected = sorted(eligible_rsi, key=rsi_key)[:rsi_count]
     selected_codes = {item[1] for item in rsi_selected}
     for item in rsi_selected:
         item[2]["screening_bucket"] = "RSI 반등 대기"

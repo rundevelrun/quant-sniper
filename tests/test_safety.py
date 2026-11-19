@@ -70,6 +70,32 @@ class SafetyTests(unittest.TestCase):
             for item in selected if item[2]["screening_bucket"] == "VBO 준비"
         ))
 
+    def test_screener_never_labels_rsi_above_threshold_as_rsi_watch(self):
+        candidates = []
+        for index, rsi in enumerate((24.0, 28.0, 28.1, 32.0, 45.0)):
+            candidates.append((f"후보{index}", f"3{index:05d}", {
+                "previous_close": 10000,
+                "previous_trading_value": 1000000 - index,
+                "previous_rsi": rsi,
+                "vbo_trend_ready": index >= 2,
+            }))
+
+        selected = _mixed_universe_candidates(candidates, 5, 30000)
+        rsi_selected = [
+            item for item in selected
+            if item[2]["screening_bucket"] == "RSI 반등 대기"
+        ]
+
+        self.assertEqual(len(rsi_selected), 2)
+        self.assertTrue(all(
+            item[2]["previous_rsi"] <= 28.0 for item in rsi_selected
+        ))
+        self.assertEqual(
+            sum(item[2]["screening_bucket"] == "VBO 준비"
+                for item in selected),
+            3,
+        )
+
     def test_dashboard_heartbeat_uses_fixed_half_hour_slots(self):
         before_first_slot = datetime.datetime(2026, 11, 19, 9, 0, 9)
         first_slot = datetime.datetime(2026, 11, 19, 9, 0, 10)
