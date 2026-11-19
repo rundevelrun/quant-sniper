@@ -78,6 +78,17 @@ def save_json(filepath, data):
         os.fsync(f.fileno())
     os.replace(temp_path, filepath)
 
+def is_dashboard_heartbeat_due(last_push_time, now=None):
+    """매시 00분 10초와 30분 10초가 지난 뒤 정기 갱신 여부를 반환한다."""
+    now = now or datetime.datetime.now()
+    slot_minute = 30 if now.minute >= 30 else 0
+    latest_slot = now.replace(
+        minute=slot_minute, second=10, microsecond=0
+    )
+    if now < latest_slot:
+        latest_slot -= datetime.timedelta(minutes=30)
+    return last_push_time < latest_slot.timestamp()
+
 def update_dashboard_events(events, event, now=None, retention_days=3):
     """최근 3일 이벤트만 유지하고 반복 스킵은 한 항목의 횟수로 합친다."""
     now = now or datetime.datetime.now()
@@ -962,8 +973,7 @@ def run_trading_loop():
                 startup_wait_done = time.time() - dashboard_started_at >= 60
                 should_publish = (
                     (dashboard_dirty and (realtime_connected or startup_wait_done))
-                    or (last_dashboard_push_time > 0
-                        and time.time() - last_dashboard_push_time >= 1800)
+                    or is_dashboard_heartbeat_due(last_dashboard_push_time)
                 )
                 if should_publish:
                     if sync_dashboard_to_branch(
@@ -1489,7 +1499,9 @@ def run_trading_loop():
                 last_published_state = current_state
 
             dashboard_due = time.time() - last_dashboard_push_time >= 300
-            dashboard_heartbeat_due = time.time() - last_dashboard_push_time >= 1800
+            dashboard_heartbeat_due = is_dashboard_heartbeat_due(
+                last_dashboard_push_time
+            )
             if git_ok and (dashboard_critical or (dashboard_dirty and dashboard_due)
                            or (positions and dashboard_due)
                            or dashboard_heartbeat_due):

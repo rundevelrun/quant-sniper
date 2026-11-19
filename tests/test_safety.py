@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+import datetime
 from unittest.mock import patch
 
 import config
@@ -9,6 +10,7 @@ from bot import (
     account_drawdown_controls, account_snapshot_baseline, build_tradeability,
     calculate_entry_shares,
     build_operational_status, confirm_persistent_signals, dashboard_status_label,
+    is_dashboard_heartbeat_due,
     git_commit_and_push, is_entry_window,
     is_market_open, market_session_progress, save_json, trading_days_held,
     estimate_external_cash_flow, sector_limit_reached, time_stop_reason,
@@ -31,6 +33,28 @@ class FakeResponse:
 
 
 class SafetyTests(unittest.TestCase):
+    def test_dashboard_heartbeat_uses_fixed_half_hour_slots(self):
+        before_first_slot = datetime.datetime(2026, 11, 19, 9, 0, 9)
+        first_slot = datetime.datetime(2026, 11, 19, 9, 0, 10)
+        after_first_push = datetime.datetime(2026, 11, 19, 9, 0, 11)
+        second_slot = datetime.datetime(2026, 11, 19, 9, 30, 10)
+
+        self.assertFalse(is_dashboard_heartbeat_due(
+            datetime.datetime(2026, 11, 19, 8, 30, 10).timestamp(),
+            before_first_slot,
+        ))
+        self.assertTrue(is_dashboard_heartbeat_due(
+            datetime.datetime(2026, 11, 19, 8, 30, 10).timestamp(),
+            first_slot,
+        ))
+        self.assertFalse(is_dashboard_heartbeat_due(
+            after_first_push.timestamp(),
+            datetime.datetime(2026, 11, 19, 9, 29, 59),
+        ))
+        self.assertTrue(is_dashboard_heartbeat_due(
+            after_first_push.timestamp(), second_slot,
+        ))
+
     def test_kiwoom_market_names_are_normalized(self):
         self.assertEqual(_market_name("거래소"), "KOSPI")
         self.assertEqual(_market_name("코스닥"), "KOSDAQ")
