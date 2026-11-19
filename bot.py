@@ -23,7 +23,8 @@ from config import (
     EQUITY_SLOWDOWN_DRAWDOWN_PCT, EQUITY_HALT_DRAWDOWN_PCT,
     MAX_POSITIONS_PER_SECTOR, ATR_STOP_MULTIPLIER,
     MIN_STOP_LOSS_PCT, MAX_STOP_LOSS_PCT, MAX_TOTAL_EXPOSURE_PCT,
-    MAX_ENTRY_DAY_RETURN_PCT
+    MAX_ENTRY_DAY_RETURN_PCT, MIM_ENABLED, MIM_ENTRY_START_TIME,
+    MIM_ENTRY_END_TIME, MIM_EXIT_TIME, MIM_MAX_SHARES, MIM_STOP_LOSS_PCT
 )
 from strategy import calculate_atr, evaluate_signals, is_favorable_market
 from kiwoom_api import KiwoomRestAPI
@@ -37,9 +38,12 @@ RISK_FILE = os.path.join(BASE_DIR, "risk_state.json")
 DASHBOARD_FILE = os.path.join(BASE_DIR, "DASHBOARD.md")
 DASHBOARD_EVENTS_FILE = os.path.join(BASE_DIR, "dashboard_events.json")
 DASHBOARD_STATE_FILE = os.path.join(BASE_DIR, "dashboard_state.json")
+MIM_STATE_FILE = os.path.join(BASE_DIR, "mim_state.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
 CURRENT_MARKET_OPEN = False
 UNIVERSE_STRATEGY_VERSION = "rsi_vbo_mixed_v5"
+MIM_STRATEGY = "KODEX200 장마감 30분 모멘텀"
+MIM_POSITION_NAME = "KODEX200 장마감 모멘텀"
 
 def acquire_instance_lock():
     lock_handle = open(LOCK_FILE, "w", encoding="utf-8")
@@ -210,6 +214,18 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     ]
     if not realtime_ok and realtime_error:
         lines += ["", f"> WebSocket 상태: {_md(realtime_error)}"]
+
+    mim_state = context.get("mim_state", {})
+    if MIM_ENABLED:
+        lines += [
+            "", "### KODEX200 장마감 30분 모멘텀 파일럿", "",
+            "| 기준값 수집 | 진입 신호 | 오늘 주문 시도 | 운용 규칙 |",
+            "|---|---|---|---|",
+            f"| {'완료' if mim_state.get('ready') else '수집 중'} "
+            f"| {'발생' if mim_state.get('long_signal') else '없음'} "
+            f"| {'예' if mim_state.get('entry_attempted') else '아니오'} "
+            f"| 15:00–15:05 최대 {MIM_MAX_SHARES}주 · -{MIM_STOP_LOSS_PCT*100:.1f}% 손절 · {MIM_EXIT_TIME} 당일 청산 |",
+        ]
 
     lines += [
         "", "### 오늘의 감시 및 신호", "",
@@ -413,6 +429,7 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
         "raw_signal_count": render_context.get("raw_signal_count", 0),
         "confirming_signal_count": render_context.get("confirming_signal_count", 0),
         "confirmed_signal_count": render_context.get("confirmed_signal_count", 0),
+        "mim_state": render_context.get("mim_state", {}),
     }
     save_json(DASHBOARD_STATE_FILE, dashboard_state)
     dashboard = render_dashboard(
@@ -770,6 +787,46 @@ def is_entry_window(now=None):
     end = now.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
     return start <= now <= end
 
+def is_mim_entry_window(now=None):
+    now = now or datetime.datetime.now()
+    start_hour, start_minute = map(int, MIM_ENTRY_START_TIME.split(":"))
+    end_hour, end_minute = map(int, MIM_ENTRY_END_TIME.split(":"))
+    start = now.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+    end = now.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+    return start <= now <= end
+
+def update_mim_state(state, now, quote, previous_close):
+    """연구 구간의 경계 가격을 90초 안에만 수집해 재기동 추격을 막는다."""
+    today = now.strftime("%Y-%m-%d")
+    if state.get("date") != today:
+        state = {"date": today, "snapshots": {}, "entry_attempted": False}
+    snapshots = state.setdefault("snapshots", {})
+    if quote and previous_close and previous_close > 0:
+        snapshots.setdefault("previous_close", float(previous_close))
+        snapshots.setdefault("open", float(quote.get("open") or 0))
+        for key, hour, minute in (
+            ("0930", 9, 30), ("1000", 10, 0),
+            ("1430", 14, 30), ("1500", 15, 0),
+        ):
+            boundary = now.replace(
+                hour=hour, minute=minute, second=0, microsecond=0
+            )
+            if boundary <= now <= boundary + datetime.timedelta(seconds=90):
+                snapshots.setdefault(key, float(quote.get("price") or 0))
+    return state
+
+def mim_long_signal(state):
+    """Overnight·두 번째 30분·마감 직전 30분이 모두 상승일 때만 롱."""
+    values = state.get("snapshots", {})
+    required = ("previous_close", "open", "0930", "1000", "1430", "1500")
+    if any(float(values.get(key) or 0) <= 0 for key in required):
+        return False
+    return (
+        values["open"] > values["previous_close"]
+        and values["1000"] > values["0930"]
+        and values["1500"] > values["1430"]
+    )
+
 def market_session_progress(now=None):
     now = now or datetime.datetime.now()
     market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
@@ -821,6 +878,7 @@ def run_trading_loop():
         "commit_hash": running_commit,
         "entry_size_multiplier": 1.0,
     }
+    mim_state = load_json(MIM_STATE_FILE, {})
     record_dashboard_event("SYSTEM", reason="봇 프로세스 시작")
     
     while True:
@@ -1136,6 +1194,25 @@ def run_trading_loop():
                 "KOSPI": is_favorable_market(kospi_market_candles),
                 "KOSDAQ": is_favorable_market(kosdaq_market_candles),
             }
+            proxy_quote = realtime.quote(MARKET_PROXY_CODE)
+            previous_proxy_close = 0
+            if kospi_market_candles and len(kospi_market_candles) >= 2:
+                previous_proxy_close = kospi_market_candles[-2]["close"]
+            if MIM_ENABLED:
+                mim_state = update_mim_state(
+                    mim_state, now, proxy_quote, previous_proxy_close
+                )
+                save_json(MIM_STATE_FILE, mim_state)
+                dashboard_context["mim_state"] = {
+                    "ready": all(
+                        float(mim_state.get("snapshots", {}).get(key) or 0) > 0
+                        for key in (
+                            "previous_close", "open", "0930", "1000", "1430", "1500"
+                        )
+                    ),
+                    "long_signal": mim_long_signal(mim_state),
+                    "entry_attempted": bool(mim_state.get("entry_attempted")),
+                }
             kosdaq_names = {
                 name for name, meta in universe_metadata.items()
                 if "KOSDAQ" in str(meta.get("market", "")).upper()
@@ -1157,6 +1234,25 @@ def run_trading_loop():
                 kosdaq_candles, kosdaq_market_candles, progress,
                 signal_diagnostics,
             )
+            if (
+                MIM_ENABLED and is_mim_entry_window(now)
+                and mim_long_signal(mim_state)
+                and not mim_state.get("entry_attempted")
+                and MIM_POSITION_NAME not in positions
+                and proxy_quote
+            ):
+                raw_signals.append({
+                    "name": MIM_POSITION_NAME,
+                    "code": MARKET_PROXY_CODE,
+                    "strategy": MIM_STRATEGY,
+                    "score": -1.0,
+                    "entry_price": float(proxy_quote["price"]),
+                    "size_multiplier": 1.0,
+                    "stop_loss_pct": MIM_STOP_LOSS_PCT,
+                    "take_profit_pct": 1.0,
+                    "atr": float(proxy_quote["price"]) * MIM_STOP_LOSS_PCT,
+                    "max_shares": MIM_MAX_SHARES,
+                })
             raw_signals.sort(key=lambda item: item["score"])
             market_favorable = any(market_regimes.values())
             monitored_names = list(active_universe)
@@ -1175,7 +1271,8 @@ def run_trading_loop():
                 ]
                 monitored_set = set(monitored_names)
                 raw_signals = [
-                    sig for sig in raw_signals if sig["name"] in monitored_set
+                    sig for sig in raw_signals
+                    if sig["name"] in monitored_set or sig.get("strategy") == MIM_STRATEGY
                 ]
                 dashboard_context["tradeability"] = [
                     item for item in tradeability if item.get("eligible")
@@ -1210,7 +1307,8 @@ def run_trading_loop():
             # 2. 보유 포지션 감시 및 청산 체크 (동적 손절, 트레일링 스탑, 익절)
             closed_positions = []
             for name, pos in list(positions.items()):
-                if name not in candles_dict:
+                is_mim_position = pos.get("strategy") == MIM_STRATEGY
+                if name not in candles_dict and not is_mim_position:
                     continue
                 quote = realtime.quote(pos["code"])
                 if not quote:
@@ -1222,17 +1320,32 @@ def run_trading_loop():
                 curr_p = quote["price"]
                 exit_price = None
                 exit_reason = None
-                stop_price, stop_reason = update_position_stop(
-                    pos, quote.get("high_water", curr_p)
+                mim_exit_hour, mim_exit_minute = map(int, MIM_EXIT_TIME.split(":"))
+                mim_exit_at = now.replace(
+                    hour=mim_exit_hour, minute=mim_exit_minute,
+                    second=0, microsecond=0,
                 )
-                if curr_p <= stop_price:
-                    exit_price = stop_price
-                    exit_reason = stop_reason
+                if is_mim_position and (
+                    pos.get("entry_date") != today_str or now >= mim_exit_at
+                ):
+                    exit_price = curr_p
+                    exit_reason = (
+                        "장마감 모멘텀 이월 포지션 복구 청산"
+                        if pos.get("entry_date") != today_str
+                        else "장마감 모멘텀 당일 청산"
+                    )
                 else:
-                    time_exit_reason = time_stop_reason(pos, curr_p)
-                    if time_exit_reason:
-                        exit_price = curr_p
-                        exit_reason = time_exit_reason
+                    stop_price, stop_reason = update_position_stop(
+                        pos, quote.get("high_water", curr_p)
+                    )
+                    if curr_p <= stop_price:
+                        exit_price = stop_price
+                        exit_reason = stop_reason
+                    else:
+                        time_exit_reason = time_stop_reason(pos, curr_p)
+                        if time_exit_reason:
+                            exit_price = curr_p
+                            exit_reason = time_exit_reason
                     
                 if exit_price:
                     if account.get("ok"):
@@ -1313,12 +1426,24 @@ def run_trading_loop():
                 risk_reasons.append("오늘자 D-1 유니버스 없음")
                 print(f"[{now_str}] [RISK] 오늘자 D-1 유니버스가 없어 신규 주문을 중단합니다.")
 
-            if not is_entry_window(now):
+            if not is_entry_window(now) and not is_mim_entry_window(now):
                 print(f"[{now_str}] [ENTRY] 신규 진입 허용 시간({ENTRY_START_TIME}~{ENTRY_END_TIME}) 외")
 
             loop_halted = trading_halted or account_lookup_failed
-            if not loop_halted and is_entry_window(now) and len(positions) < MAX_POSITIONS:
-                signals = list(raw_signals)
+            entry_window_open = is_entry_window(now) or (
+                MIM_ENABLED and is_mim_entry_window(now)
+            )
+            if not loop_halted and entry_window_open and len(positions) < MAX_POSITIONS:
+                if is_mim_entry_window(now):
+                    signals = [
+                        sig for sig in raw_signals
+                        if sig.get("strategy") == MIM_STRATEGY
+                    ]
+                else:
+                    signals = [
+                        sig for sig in raw_signals
+                        if sig.get("strategy") != MIM_STRATEGY
+                    ]
                 # 재기동 직후의 일시적/이미 끝난 신호 추격을 막는다. 동일 전략 신호가
                 # 30초 간격으로 3회 연속 유지될 때만 신규 주문 후보로 인정한다.
                 signals, signal_confirmations = confirm_persistent_signals(
@@ -1355,7 +1480,8 @@ def run_trading_loop():
                 # 주문 가격도 키움 실시간 체결가로 통일한다. 오래된 시세는 후보에서 제외한다.
                 live_signals = []
                 for sig in signals:
-                    quote = realtime.quote(active_universe.get(sig["name"], ""))
+                    signal_code = sig.get("code") or active_universe.get(sig["name"], "")
+                    quote = realtime.quote(signal_code)
                     if quote:
                         sig = dict(sig)
                         sig["entry_price"] = quote["price"]
@@ -1405,7 +1531,7 @@ def run_trading_loop():
                         )
                         dashboard_dirty = True
                         continue
-                    code = active_universe[name]
+                    code = sig.get("code") or active_universe[name]
                     candidate_sector = universe_metadata.get(name, {}).get(
                         "sector", "미분류"
                     )
@@ -1424,6 +1550,7 @@ def run_trading_loop():
                         entry_p, stop_loss_pct,
                         entry_size_multiplier * float(sig.get("size_multiplier", 1.0)),
                     )
+                    shares = min(shares, int(sig.get("max_shares", shares)))
                     if shares < 1:
                         print(f"[{now_str}] [SKIP] {name}: 1주가 투자/위험 한도를 초과")
                         record_dashboard_event(
@@ -1471,6 +1598,9 @@ def run_trading_loop():
                                 sig.get("atr", fill_price * 0.03) / max(fill_price, 1))),
                             "strategy": sig["strategy"]
                         }
+                        if sig["strategy"] == MIM_STRATEGY:
+                            mim_state["entry_attempted"] = True
+                            save_json(MIM_STATE_FILE, mim_state)
                         realtime.reset_high_water(code, fill_price)
                         cash -= filled_qty * fill_price
                         trade_record = {
@@ -1526,7 +1656,10 @@ def run_trading_loop():
             dashboard_context.update({
                 "last_loop_at": now_str,
                 "entry_allowed": (
-                    not loop_halted and is_entry_window(now)
+                    not loop_halted
+                    and (is_entry_window(now) or (
+                        MIM_ENABLED and is_mim_entry_window(now)
+                    ))
                     and len(positions) < MAX_POSITIONS
                 ),
             })

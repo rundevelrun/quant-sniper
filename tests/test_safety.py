@@ -13,7 +13,8 @@ from bot import (
     build_operational_status, confirm_persistent_signals, dashboard_status_label,
     is_dashboard_heartbeat_due,
     git_commit_and_push, is_entry_window,
-    is_market_open, market_session_progress, save_json, trading_days_held,
+    is_market_open, is_mim_entry_window, market_session_progress,
+    mim_long_signal, save_json, trading_days_held, update_mim_state,
     estimate_external_cash_flow, sector_limit_reached, time_stop_reason,
     screening_preferred_max_price,
     update_dashboard_events, update_position_stop,
@@ -394,6 +395,55 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse(is_entry_window(datetime.datetime(2026, 11, 13, 14, 31)))
         self.assertEqual(market_session_progress(datetime.datetime(2026, 11, 13, 9, 0)), 0)
         self.assertEqual(market_session_progress(datetime.datetime(2026, 11, 13, 15, 30)), 1)
+
+    def test_mim_collects_only_boundary_prices_and_requires_three_positive_periods(self):
+        state = {}
+        quote = {"open": 101, "price": 102}
+        state = update_mim_state(
+            state, datetime.datetime(2026, 11, 20, 9, 30, 10), quote, 100
+        )
+        quote["price"] = 103
+        state = update_mim_state(
+            state, datetime.datetime(2026, 11, 20, 10, 0, 10), quote, 100
+        )
+        quote["price"] = 104
+        state = update_mim_state(
+            state, datetime.datetime(2026, 11, 20, 14, 30, 10), quote, 100
+        )
+        quote["price"] = 105
+        state = update_mim_state(
+            state, datetime.datetime(2026, 11, 20, 15, 0, 10), quote, 100
+        )
+        self.assertTrue(mim_long_signal(state))
+
+    def test_mim_late_restart_does_not_reconstruct_missed_boundaries(self):
+        state = update_mim_state(
+            {}, datetime.datetime(2026, 11, 20, 12, 0),
+            {"open": 101, "price": 105}, 100,
+        )
+        self.assertFalse(mim_long_signal(state))
+        self.assertNotIn("0930", state["snapshots"])
+        self.assertTrue(is_mim_entry_window(
+            datetime.datetime(2026, 11, 20, 15, 0)
+        ))
+        self.assertFalse(is_mim_entry_window(
+            datetime.datetime(2026, 11, 20, 15, 6)
+        ))
+
+    def test_dashboard_shows_separate_mim_pilot_state(self):
+        class Feed:
+            def quote(self, code):
+                return None
+            def is_healthy(self):
+                return True, ""
+        markdown = render_dashboard(
+            "running", "정규 감시 중", {}, Feed(), [],
+            context={"mim_state": {
+                "ready": True, "long_signal": True, "entry_attempted": False,
+            }},
+        )
+        self.assertIn("KODEX200 장마감 30분 모멘텀 파일럿", markdown)
+        self.assertIn("| 완료 | 발생 | 아니오 |", markdown)
 
     def test_market_open_requires_krx_trading_day(self):
         import datetime
