@@ -15,6 +15,7 @@ from bot import (
     git_commit_and_push, is_entry_window,
     is_market_open, is_mim_entry_window, market_session_progress,
     mim_long_signal, save_json, trading_days_held, update_mim_state,
+    etf_rotation_regime, etf_rotation_traded_today,
     estimate_external_cash_flow, sector_limit_reached, time_stop_reason,
     screening_preferred_max_price,
     update_dashboard_events, update_position_stop,
@@ -429,6 +430,34 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse(is_mim_entry_window(
             datetime.datetime(2026, 11, 20, 15, 6)
         ))
+
+    def test_etf_rotation_uses_only_completed_daily_trend(self):
+        start = datetime.date(2026, 8, 1)
+        rising = [
+            {"date": (start + datetime.timedelta(days=index)).strftime("%Y%m%d"),
+             "close": 100 + index}
+            for index in range(65)
+        ]
+        falling = [
+            {"date": (start + datetime.timedelta(days=index)).strftime("%Y%m%d"),
+             "close": 200 - index}
+            for index in range(65)
+        ]
+        flat = [dict(item, close=100) for item in rising]
+        now = datetime.datetime(2026, 11, 20, 10, 0)
+        self.assertEqual(etf_rotation_regime(rising, now)[0], "long")
+        self.assertEqual(etf_rotation_regime(falling, now)[0], "inverse")
+        self.assertEqual(etf_rotation_regime(flat, now)[0], "cash")
+        rising.append({"date": "20261120", "close": 1})
+        self.assertEqual(etf_rotation_regime(rising, now)[0], "long")
+
+    def test_etf_rotation_does_not_reenter_on_same_day(self):
+        trades = [{
+            "timestamp": "2026-11-20 09:20:00", "type": "SELL",
+            "strategy": "시장 ETF 3상태 추세전환",
+        }]
+        self.assertTrue(etf_rotation_traded_today(trades, "2026-11-20"))
+        self.assertFalse(etf_rotation_traded_today(trades, "2026-11-21"))
 
     def test_dashboard_shows_separate_mim_pilot_state(self):
         class Feed:

@@ -24,7 +24,11 @@ from config import (
     MAX_POSITIONS_PER_SECTOR, ATR_STOP_MULTIPLIER,
     MIN_STOP_LOSS_PCT, MAX_STOP_LOSS_PCT, MAX_TOTAL_EXPOSURE_PCT,
     MAX_ENTRY_DAY_RETURN_PCT, MIM_ENABLED, MIM_ENTRY_START_TIME,
-    MIM_ENTRY_END_TIME, MIM_EXIT_TIME, MIM_MAX_SHARES, MIM_STOP_LOSS_PCT
+    MIM_ENTRY_END_TIME, MIM_EXIT_TIME, MIM_MAX_SHARES, MIM_STOP_LOSS_PCT,
+    ETF_ROTATION_ENABLED, ETF_ROTATION_LONG_CODE,
+    ETF_ROTATION_INVERSE_CODE, ETF_ROTATION_MA_PERIOD,
+    ETF_ROTATION_SLOPE_DAYS, ETF_ROTATION_BAND_PCT,
+    ETF_ROTATION_ALLOC_PCT, ETF_ROTATION_STOP_LOSS_PCT
 )
 from strategy import calculate_atr, evaluate_signals, is_favorable_market
 from kiwoom_api import KiwoomRestAPI
@@ -44,6 +48,14 @@ CURRENT_MARKET_OPEN = False
 UNIVERSE_STRATEGY_VERSION = "rsi_vbo_mixed_v5"
 MIM_STRATEGY = "KODEX200 장마감 30분 모멘텀"
 MIM_POSITION_NAME = "KODEX200 장마감 모멘텀"
+ETF_ROTATION_STRATEGY = "시장 ETF 3상태 추세전환"
+ETF_ROTATION_NAMES = {
+    ETF_ROTATION_LONG_CODE: "KODEX 200 추세",
+    ETF_ROTATION_INVERSE_CODE: "KODEX 인버스 추세",
+}
+ETF_ROUNDTRIP_COST_PCT = (BROKER_COMMISSION_PCT * 2) + (
+    SLIPPAGE_ESTIMATE_PCT * 2
+)
 
 def acquire_instance_lock():
     lock_handle = open(LOCK_FILE, "w", encoding="utf-8")
@@ -225,6 +237,26 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             f"| {'발생' if mim_state.get('long_signal') else '없음'} "
             f"| {'예' if mim_state.get('entry_attempted') else '아니오'} "
             f"| 15:00–15:05 최대 {MIM_MAX_SHARES}주 · -{MIM_STOP_LOSS_PCT*100:.1f}% 손절 · {MIM_EXIT_TIME} 당일 청산 |",
+        ]
+
+    rotation = context.get("etf_rotation", {})
+    if ETF_ROTATION_ENABLED:
+        regime_label = {
+            "long": "KODEX 200",
+            "inverse": "KODEX 인버스",
+            "cash": "현금",
+        }.get(rotation.get("regime"), "계산 대기")
+        previous_close = rotation.get("previous_close")
+        moving_average = rotation.get("ma")
+        lines += [
+            "", "### 시장 ETF 3상태 추세전환", "",
+            "| 현재 선택 | 전일 종가 | 60일선 | 배정 상한 | 판단 기준 |",
+            "|---|---:|---:|---:|---|",
+            f"| {regime_label} "
+            f"| {f'{float(previous_close):,.0f}' if previous_close else '-'} "
+            f"| {f'{float(moving_average):,.0f}' if moving_average else '-'} "
+            f"| {ETF_ROTATION_ALLOC_PCT*100:.0f}% "
+            "| 전일 종가가 60일선 ±1% 밖이고 5거래일 기울기가 같은 방향 |",
         ]
 
     lines += [
@@ -430,6 +462,7 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
         "confirming_signal_count": render_context.get("confirming_signal_count", 0),
         "confirmed_signal_count": render_context.get("confirmed_signal_count", 0),
         "mim_state": render_context.get("mim_state", {}),
+        "etf_rotation": render_context.get("etf_rotation", {}),
     }
     save_json(DASHBOARD_STATE_FILE, dashboard_state)
     dashboard = render_dashboard(
@@ -827,6 +860,50 @@ def mim_long_signal(state):
         and values["1500"] > values["1430"]
     )
 
+def etf_rotation_regime(candles, now=None):
+    """전일 확정 종가의 60일선·기울기로 long/cash/inverse를 결정한다."""
+    now = now or datetime.datetime.now()
+    today = now.strftime("%Y%m%d")
+    completed = [
+        candle for candle in candles
+        if str(candle.get("date", "")).replace("-", "") != today
+        and float(candle.get("close") or 0) > 0
+    ]
+    needed = ETF_ROTATION_MA_PERIOD + ETF_ROTATION_SLOPE_DAYS
+    if len(completed) < needed:
+        return "cash", {"reason": f"확정 일봉 {needed}개 미만"}
+    closes = [float(candle["close"]) for candle in completed]
+    close = closes[-1]
+    ma_now = sum(closes[-ETF_ROTATION_MA_PERIOD:]) / ETF_ROTATION_MA_PERIOD
+    previous_end = -ETF_ROTATION_SLOPE_DAYS
+    ma_previous = (
+        sum(closes[previous_end-ETF_ROTATION_MA_PERIOD:previous_end])
+        / ETF_ROTATION_MA_PERIOD
+    )
+    upper = ma_now * (1 + ETF_ROTATION_BAND_PCT)
+    lower = ma_now * (1 - ETF_ROTATION_BAND_PCT)
+    if close > upper and ma_now > ma_previous:
+        regime = "long"
+    elif close < lower and ma_now < ma_previous:
+        regime = "inverse"
+    else:
+        regime = "cash"
+    return regime, {
+        "previous_close": close,
+        "ma": ma_now,
+        "ma_5d_ago": ma_previous,
+        "upper": upper,
+        "lower": lower,
+        "reason": "60일선 ±1%와 5거래일 기울기",
+    }
+
+def etf_rotation_traded_today(trades, today):
+    return any(
+        trade.get("strategy") == ETF_ROTATION_STRATEGY
+        and str(trade.get("timestamp", "")).startswith(today)
+        for trade in trades
+    )
+
 def market_session_progress(now=None):
     now = now or datetime.datetime.now()
     market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
@@ -927,7 +1004,8 @@ def run_trading_loop():
             })
             realtime.set_symbols(
                 list(active_universe.values())
-                + [MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE]
+                + [MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE,
+                   ETF_ROTATION_INVERSE_CODE]
                 + [p.get("code") for p in load_json(POSITIONS_FILE, {}).values()]
             )
             proxy_quote = (
@@ -1213,6 +1291,19 @@ def run_trading_loop():
                     "long_signal": mim_long_signal(mim_state),
                     "entry_attempted": bool(mim_state.get("entry_attempted")),
                 }
+            rotation_regime, rotation_detail = etf_rotation_regime(
+                kospi_market_candles, now
+            )
+            rotation_target_code = {
+                "long": ETF_ROTATION_LONG_CODE,
+                "inverse": ETF_ROTATION_INVERSE_CODE,
+            }.get(rotation_regime)
+            dashboard_context["etf_rotation"] = {
+                "enabled": ETF_ROTATION_ENABLED,
+                "regime": rotation_regime,
+                "target_code": rotation_target_code,
+                **rotation_detail,
+            }
             kosdaq_names = {
                 name for name, meta in universe_metadata.items()
                 if "KOSDAQ" in str(meta.get("market", "")).upper()
@@ -1234,6 +1325,33 @@ def run_trading_loop():
                 kosdaq_candles, kosdaq_market_candles, progress,
                 signal_diagnostics,
             )
+            rotation_position = next(
+                (
+                    pos for pos in positions.values()
+                    if pos.get("strategy") == ETF_ROTATION_STRATEGY
+                ),
+                None,
+            )
+            rotation_blocked_today = etf_rotation_traded_today(trades, today_str)
+            if (
+                ETF_ROTATION_ENABLED and rotation_target_code
+                and not rotation_position and not rotation_blocked_today
+            ):
+                rotation_quote = realtime.quote(rotation_target_code)
+                if rotation_quote:
+                    raw_signals.append({
+                        "name": ETF_ROTATION_NAMES[rotation_target_code],
+                        "code": rotation_target_code,
+                        "strategy": ETF_ROTATION_STRATEGY,
+                        "score": -2.0,
+                        "entry_price": float(rotation_quote["price"]),
+                        "size_multiplier": 1.0,
+                        "max_investment_pct": ETF_ROTATION_ALLOC_PCT,
+                        "stop_loss_pct": ETF_ROTATION_STOP_LOSS_PCT,
+                        "take_profit_pct": 1.0,
+                        "atr": float(rotation_quote["price"]) * ETF_ROTATION_STOP_LOSS_PCT,
+                        "roundtrip_cost_pct": ETF_ROUNDTRIP_COST_PCT,
+                    })
             if (
                 MIM_ENABLED and is_mim_entry_window(now)
                 and mim_long_signal(mim_state)
@@ -1272,7 +1390,8 @@ def run_trading_loop():
                 monitored_set = set(monitored_names)
                 raw_signals = [
                     sig for sig in raw_signals
-                    if sig["name"] in monitored_set or sig.get("strategy") == MIM_STRATEGY
+                    if sig["name"] in monitored_set
+                    or sig.get("strategy") in {MIM_STRATEGY, ETF_ROTATION_STRATEGY}
                 ]
                 dashboard_context["tradeability"] = [
                     item for item in tradeability if item.get("eligible")
@@ -1308,7 +1427,10 @@ def run_trading_loop():
             closed_positions = []
             for name, pos in list(positions.items()):
                 is_mim_position = pos.get("strategy") == MIM_STRATEGY
-                if name not in candles_dict and not is_mim_position:
+                is_rotation_position = pos.get("strategy") == ETF_ROTATION_STRATEGY
+                if name not in candles_dict and not (
+                    is_mim_position or is_rotation_position
+                ):
                     continue
                 quote = realtime.quote(pos["code"])
                 if not quote:
@@ -1325,7 +1447,17 @@ def run_trading_loop():
                     hour=mim_exit_hour, minute=mim_exit_minute,
                     second=0, microsecond=0,
                 )
-                if is_mim_position and (
+                if is_rotation_position and (
+                    not ETF_ROTATION_ENABLED
+                    or pos.get("code") != rotation_target_code
+                ):
+                    exit_price = curr_p
+                    exit_reason = (
+                        "ETF 추세전환 전략 비활성화 청산"
+                        if not ETF_ROTATION_ENABLED
+                        else f"ETF 국면 전환: {rotation_regime}"
+                    )
+                elif is_mim_position and (
                     pos.get("entry_date") != today_str or now >= mim_exit_at
                 ):
                     exit_price = curr_p
@@ -1341,7 +1473,7 @@ def run_trading_loop():
                     if curr_p <= stop_price:
                         exit_price = stop_price
                         exit_reason = stop_reason
-                    else:
+                    elif not is_rotation_position:
                         time_exit_reason = time_stop_reason(pos, curr_p)
                         if time_exit_reason:
                             exit_price = curr_p
@@ -1377,7 +1509,10 @@ def run_trading_loop():
                         continue
 
                     gross_ret_pct = ((actual_exit_price - buy_p) / buy_p) * 100
-                    cost_krw = pos["shares"] * actual_exit_price * TOTAL_ROUNDTRIP_COST_PCT
+                    roundtrip_cost_pct = float(
+                        pos.get("roundtrip_cost_pct", TOTAL_ROUNDTRIP_COST_PCT)
+                    )
+                    cost_krw = pos["shares"] * actual_exit_price * roundtrip_cost_pct
                     gross_profit_krw = pos["shares"] * (actual_exit_price - buy_p)
                     net_profit_krw = gross_profit_krw - cost_krw
                     net_ret_pct = (net_profit_krw / (pos["shares"] * buy_p)) * 100
@@ -1395,7 +1530,8 @@ def run_trading_loop():
                         "net_return_pct": round(net_ret_pct, 2),
                         "cost_fee_krw": round(cost_krw, 0),
                         "net_profit_krw": round(net_profit_krw, 0),
-                        "reason": exit_reason
+                        "reason": exit_reason,
+                        "strategy": pos.get("strategy"),
                     }
                     trades.append(trade_record)
                     record_dashboard_event(
@@ -1551,6 +1687,11 @@ def run_trading_loop():
                         entry_size_multiplier * float(sig.get("size_multiplier", 1.0)),
                     )
                     shares = min(shares, int(sig.get("max_shares", shares)))
+                    if sig.get("max_investment_pct") is not None:
+                        strategy_allocation_shares = int(
+                            total_assets * float(sig["max_investment_pct"]) // entry_p
+                        )
+                        shares = min(shares, strategy_allocation_shares)
                     if shares < 1:
                         print(f"[{now_str}] [SKIP] {name}: 1주가 투자/위험 한도를 초과")
                         record_dashboard_event(
@@ -1596,7 +1737,10 @@ def run_trading_loop():
                             "highest_price": fill_price,
                             "trailing_gap_pct": max(0.02, min(0.04,
                                 sig.get("atr", fill_price * 0.03) / max(fill_price, 1))),
-                            "strategy": sig["strategy"]
+                            "strategy": sig["strategy"],
+                            "roundtrip_cost_pct": sig.get(
+                                "roundtrip_cost_pct", TOTAL_ROUNDTRIP_COST_PCT
+                            ),
                         }
                         if sig["strategy"] == MIM_STRATEGY:
                             mim_state["entry_attempted"] = True
@@ -1612,7 +1756,10 @@ def run_trading_loop():
                             "entry_price": fill_price,
                             "stop_loss_pct": sig.get("stop_loss_pct", STOP_LOSS_PCT),
                             "take_profit_pct": sig.get("take_profit_pct", TAKE_PROFIT_PCT),
-                            "strategy": sig["strategy"]
+                            "strategy": sig["strategy"],
+                            "roundtrip_cost_pct": sig.get(
+                                "roundtrip_cost_pct", TOTAL_ROUNDTRIP_COST_PCT
+                            ),
                         }
                         trades.append(trade_record)
                         record_dashboard_event(
