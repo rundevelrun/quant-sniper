@@ -436,12 +436,14 @@ class SafetyTests(unittest.TestCase):
                 return None
             def is_healthy(self):
                 return True, ""
-        markdown = render_dashboard(
-            "running", "정규 감시 중", {}, Feed(), [],
-            context={"mim_state": {
-                "ready": True, "long_signal": True, "entry_attempted": False,
-            }},
-        )
+        with patch("bot.MIM_ENABLED", True):
+            markdown = render_dashboard(
+                "running", "정규 감시 중", {}, Feed(), [],
+                context={"mim_state": {
+                    "ready": True, "long_signal": True,
+                    "entry_attempted": False,
+                }},
+            )
         self.assertIn("KODEX200 장마감 30분 모멘텀 파일럿", markdown)
         self.assertIn("| 완료 | 발생 | 아니오 |", markdown)
 
