@@ -22,7 +22,8 @@ from config import (
     MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW, MAX_RISK_PER_TRADE_PCT,
     EQUITY_SLOWDOWN_DRAWDOWN_PCT, EQUITY_HALT_DRAWDOWN_PCT,
     MAX_POSITIONS_PER_SECTOR, ATR_STOP_MULTIPLIER,
-    MIN_STOP_LOSS_PCT, MAX_STOP_LOSS_PCT, MAX_TOTAL_EXPOSURE_PCT
+    MIN_STOP_LOSS_PCT, MAX_STOP_LOSS_PCT, MAX_TOTAL_EXPOSURE_PCT,
+    MAX_ENTRY_DAY_RETURN_PCT
 )
 from strategy import calculate_atr, evaluate_signals, is_favorable_market
 from kiwoom_api import KiwoomRestAPI
@@ -38,7 +39,7 @@ DASHBOARD_EVENTS_FILE = os.path.join(BASE_DIR, "dashboard_events.json")
 DASHBOARD_STATE_FILE = os.path.join(BASE_DIR, "dashboard_state.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
 CURRENT_MARKET_OPEN = False
-UNIVERSE_STRATEGY_VERSION = "rsi_vbo_mixed_v4"
+UNIVERSE_STRATEGY_VERSION = "rsi_vbo_mixed_v5"
 
 def acquire_instance_lock():
     lock_handle = open(LOCK_FILE, "w", encoding="utf-8")
@@ -627,18 +628,19 @@ def entry_cash_after_reserve(total_assets, cash):
 
 
 def screening_preferred_max_price(account):
-    """비우호장 50%·최대 손절폭에서도 1주 가능한 전일종가 상한을 계산한다."""
+    """당일 허용 상승 후에도 비우호장 50%에서 1주 가능한 전일종가 상한."""
     if not account.get("ok"):
         return None
     total_assets = float(account.get("total_assets") or 0)
     cash = float(account.get("cash") or 0)
     if min(total_assets, cash) <= 0:
         return None
-    return min(
+    live_price_cap = min(
         cash,
         total_assets * MAX_ALLOC_PER_STOCK * 0.5,
         total_assets * MAX_RISK_PER_TRADE_PCT * 0.5 / MAX_STOP_LOSS_PCT,
     )
+    return live_price_cap / (1.0 + MAX_ENTRY_DAY_RETURN_PCT)
 
 def sector_limit_reached(candidate_sector, positions, universe_metadata,
                          max_per_sector=MAX_POSITIONS_PER_SECTOR):

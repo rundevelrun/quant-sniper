@@ -569,7 +569,7 @@ class SafetyTests(unittest.TestCase):
         cap = screening_preferred_max_price({
             "ok": True, "total_assets": 306170, "cash": 306170,
         })
-        self.assertAlmostEqual(cap, 26789.875)
+        self.assertAlmostEqual(cap, 24354.431818181816)
 
     def test_kiwoom_daily_candles_are_returned_oldest_first(self):
         with patch.object(config, "LIVE_TRADING_ENABLED", True):
