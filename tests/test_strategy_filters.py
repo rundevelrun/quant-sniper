@@ -63,9 +63,23 @@ class StrategyFilterTests(unittest.TestCase):
         prev = candles[-1]
         target = 106.0 + (prev["high"] - prev["low"]) * 0.5
         candles.append(candle(target + 1, open_price=106.0,
-                              high=target + 1.2, low=105.8, vol=2000))
+                              high=target + 1.2, low=105.8, vol=1800))
         falling = [candle(200 - i) for i in range(70)]
         self.assertEqual(evaluate_signals({"돌파주": candles}, falling), [])
+
+    def test_unfavorable_market_allows_only_strong_vbo_at_fifteen_percent(self):
+        candles = [candle(100 + i * 0.2, vol=1000) for i in range(29)]
+        prev = candles[-1]
+        target = 106.0 + (prev["high"] - prev["low"]) * 0.5
+        candles.append(candle(target + 1, open_price=106.0,
+                              high=target + 1.2, low=105.8, vol=2200))
+        falling = [candle(200 - i) for i in range(70)]
+
+        signals = evaluate_signals({"강한돌파주": candles}, falling)
+
+        self.assertEqual(len(signals), 1)
+        self.assertEqual(signals[0]["strategy"], "비우호장 강한 VBO (15%)")
+        self.assertAlmostEqual(signals[0]["size_multiplier"], 0.15 / 0.35)
 
     def test_signal_diagnostics_explains_both_entry_paths(self):
         candles = [candle(100 + i, vol=1000) for i in range(30)]

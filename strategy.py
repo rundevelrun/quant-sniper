@@ -2,6 +2,10 @@ from config import (
     RSI_PERIOD, RSI_BUY_THRESHOLD, RSI_RECOVERY_THRESHOLD, VBO_K,
     MARKET_MA_PERIOD, VOLUME_CONFIRM_MULTIPLIER, MAX_ENTRY_GAP_PCT,
     MAX_ENTRY_DAY_RETURN_PCT, MAX_UPPER_WICK_RATIO,
+    UNFAVORABLE_VBO_VOLUME_MULTIPLIER,
+    UNFAVORABLE_VBO_RELATIVE_STRENGTH_PCT,
+    UNFAVORABLE_VBO_MAX_MARKET_DROP_PCT,
+    UNFAVORABLE_VBO_SIZE_MULTIPLIER,
     ATR_PERIOD, ATR_STOP_MULTIPLIER, MIN_STOP_LOSS_PCT, MAX_STOP_LOSS_PCT,
     MIN_RISK_REWARD_RATIO, STOP_LOSS_PCT, TAKE_PROFIT_PCT
 )
@@ -128,6 +132,26 @@ def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0,
             volume_confirmed and
             price_quality_ok
         )
+        market_day_return_pct = 0.0
+        if market_candles and len(market_candles) >= 2:
+            market_prev_close = market_candles[-2]["close"]
+            if market_prev_close:
+                market_day_return_pct = (
+                    market_candles[-1]["close"] - market_prev_close
+                ) / market_prev_close
+        strong_unfavorable_vbo = (
+            not favorable_market
+            and (curr["close"] >= target_price)
+            and (curr["close"] > curr["open"])
+            and (curr["close"] > ma20)
+            and (ma20 > prev_ma20)
+            and expected_volume > 0
+            and curr["vol"] >= expected_volume * UNFAVORABLE_VBO_VOLUME_MULTIPLIER
+            and market_day_return_pct > -UNFAVORABLE_VBO_MAX_MARKET_DROP_PCT
+            and day_return_pct - market_day_return_pct
+                >= UNFAVORABLE_VBO_RELATIVE_STRENGTH_PCT
+            and price_quality_ok
+        )
 
         if diagnostics is not None:
             if is_rsi_signal:
@@ -143,7 +167,9 @@ def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0,
             else:
                 rsi_blocker = "가격 품질 기준 미달"
 
-            if not favorable_market:
+            if strong_unfavorable_vbo:
+                vbo_blocker = "강한 비우호장 예외 충족"
+            elif not favorable_market:
                 vbo_blocker = "시장 비우호"
             elif curr["close"] < target_price:
                 vbo_blocker = "돌파가 미도달"
@@ -208,6 +234,33 @@ def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0,
                 "atr": round(atr, 0),
                 "stop_loss_pct": round(dynamic_stop_pct, 4),
                 "take_profit_pct": round(dynamic_take_profit_pct, 4)
+            })
+        elif strong_unfavorable_vbo:
+            entry_p = curr["close"]
+            atr_pct = (atr / entry_p) if entry_p > 0 else 0.03
+            breakout_pct = (curr["close"] - target_price) / target_price * 100
+            dynamic_stop_pct = max(
+                MIN_STOP_LOSS_PCT,
+                min(MAX_STOP_LOSS_PCT, atr_pct * ATR_STOP_MULTIPLIER),
+            )
+            dynamic_take_profit_pct = max(
+                TAKE_PROFIT_PCT, dynamic_stop_pct * MIN_RISK_REWARD_RATIO
+            )
+            candidates.append({
+                "name": name,
+                "strategy": "비우호장 강한 VBO (15%)",
+                "size_multiplier": UNFAVORABLE_VBO_SIZE_MULTIPLIER,
+                "market_favorable": False,
+                "score": 50.0 + breakout_pct,
+                "entry_price": entry_p,
+                "rsi": round(rsi, 1),
+                "volume_pace_ratio": round(curr["vol"] / expected_volume, 2),
+                "relative_strength_pct": round(
+                    (day_return_pct - market_day_return_pct) * 100, 2
+                ),
+                "atr": round(atr, 0),
+                "stop_loss_pct": round(dynamic_stop_pct, 4),
+                "take_profit_pct": round(dynamic_take_profit_pct, 4),
             })
             
     # 우선순위 정렬 (RSI 과매도 신호 최우선 배치)
