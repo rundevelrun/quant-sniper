@@ -38,6 +38,7 @@ DASHBOARD_EVENTS_FILE = os.path.join(BASE_DIR, "dashboard_events.json")
 DASHBOARD_STATE_FILE = os.path.join(BASE_DIR, "dashboard_state.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
 CURRENT_MARKET_OPEN = False
+UNIVERSE_STRATEGY_VERSION = "rsi_vbo_mixed_v1"
 
 def acquire_instance_lock():
     lock_handle = open(LOCK_FILE, "w", encoding="utf-8")
@@ -836,7 +837,11 @@ def run_trading_loop():
                 name in cache_metadata and cache_metadata[name].get("market")
                 for name in cache_symbols
             )
-            if universe_cache.get("date") == today_str and cache_symbols:
+            if (
+                universe_cache.get("date") == today_str
+                and universe_cache.get("strategy_version") == UNIVERSE_STRATEGY_VERSION
+                and cache_symbols
+            ):
                 active_universe = universe_cache["symbols"]
                 universe_metadata = cache_metadata
                 if cache_complete:
@@ -886,11 +891,12 @@ def run_trading_loop():
                     active_universe = screened
                     universe_metadata = api.last_universe_metadata
                     last_screened_date = today_str
-                    universe_source = "kiwoom_previous_day_value_affordability_priority"
+                    universe_source = "kiwoom_previous_day_rsi_vbo_mixed"
                     save_json(UNIVERSE_FILE, {
                         "date": today_str, "symbols": screened,
                         "metadata": universe_metadata,
                         "source": universe_source,
+                        "strategy_version": UNIVERSE_STRATEGY_VERSION,
                     })
                     dashboard_context.update({
                         "universe_date": today_str,
@@ -939,11 +945,12 @@ def run_trading_loop():
                     active_universe = screened
                     universe_metadata = api.last_universe_metadata
                     last_screened_date = today_str
-                    universe_source = "kiwoom_previous_day_value_affordability_priority"
+                    universe_source = "kiwoom_previous_day_rsi_vbo_mixed"
                     save_json(UNIVERSE_FILE, {
                         "date": today_str, "symbols": screened,
                         "metadata": universe_metadata,
                         "source": universe_source,
+                        "strategy_version": UNIVERSE_STRATEGY_VERSION,
                     })
                     dashboard_context.update({
                         "universe_date": today_str,

@@ -18,7 +18,9 @@ from bot import (
     update_dashboard_events, update_position_stop,
     render_dashboard,
 )
-from kiwoom_api import KiwoomRestAPI, _market_name
+from kiwoom_api import (
+    KiwoomRestAPI, _market_name, _mixed_universe_candidates,
+)
 
 
 class FakeResponse:
@@ -33,6 +35,41 @@ class FakeResponse:
 
 
 class SafetyTests(unittest.TestCase):
+    def test_screener_mixes_rsi_watch_and_vbo_candidates(self):
+        candidates = []
+        for index in range(20):
+            candidates.append((f"RSI{index}", f"1{index:05d}", {
+                "previous_close": 10000,
+                "previous_trading_value": 1000000 - index,
+                "previous_rsi": 20 + index * 0.5,
+                "vbo_trend_ready": False,
+            }))
+        for index in range(12):
+            candidates.append((f"VBO{index}", f"2{index:05d}", {
+                "previous_close": 10000,
+                "previous_trading_value": 2000000 - index,
+                "previous_rsi": 55,
+                "vbo_trend_ready": True,
+            }))
+
+        selected = _mixed_universe_candidates(candidates, 20, 30000)
+
+        self.assertEqual(len(selected), 20)
+        self.assertEqual(
+            sum(item[2]["screening_bucket"] == "RSI 반등 대기"
+                for item in selected),
+            12,
+        )
+        self.assertEqual(
+            sum(item[2]["screening_bucket"] == "VBO 준비"
+                for item in selected),
+            8,
+        )
+        self.assertTrue(all(
+            item[2]["vbo_trend_ready"]
+            for item in selected if item[2]["screening_bucket"] == "VBO 준비"
+        ))
+
     def test_dashboard_heartbeat_uses_fixed_half_hour_slots(self):
         before_first_slot = datetime.datetime(2026, 11, 19, 9, 0, 9)
         first_slot = datetime.datetime(2026, 11, 19, 9, 0, 10)

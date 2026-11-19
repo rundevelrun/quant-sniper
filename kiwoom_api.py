@@ -4,6 +4,8 @@ import json
 import urllib.request
 import urllib.parse
 
+from strategy import calculate_rsi
+
 def _number(value, default=0.0):
     try:
         return float(str(value).replace(",", "").strip() or 0)
@@ -18,6 +20,63 @@ def _market_name(value):
     if "거래소" in text or "KOSPI" in text:
         return "KOSPI"
     return "미분류"
+
+def _completed_daily_metrics(rows):
+    """최신순 전일 일봉에서 RSI 및 VBO 사전 준비도를 계산한다."""
+    ordered = sorted(rows, key=lambda row: str(row.get("dt", "")))
+    closes = [abs(_number(row.get("cur_prc"))) for row in ordered]
+    closes = [value for value in closes if value > 0]
+    previous_rsi = calculate_rsi(closes) if len(closes) >= 15 else None
+    trend_ready = False
+    if len(closes) >= 21:
+        ma20 = sum(closes[-20:]) / 20.0
+        previous_ma20 = sum(closes[-21:-1]) / 20.0
+        trend_ready = closes[-1] > ma20 > previous_ma20
+    return previous_rsi, trend_ready
+
+def _mixed_universe_candidates(candidates, top_n, preferred_max_price=None):
+    """RSI 반등 대기 60%, VBO 준비 40%의 혼합 유니버스를 만든다."""
+    if not candidates or top_n <= 0:
+        return []
+
+    def affordable(item):
+        return bool(
+            preferred_max_price and preferred_max_price > 0
+            and item[2]["previous_close"] > preferred_max_price
+        )
+
+    def rsi_key(item):
+        rsi = item[2].get("previous_rsi")
+        if rsi is None:
+            return (affordable(item), 3, 999.0,
+                    -item[2]["previous_trading_value"])
+        # 전략 임계값(28) 직전의 20~28 구간을 우선하고 극단 과매도와
+        # 임계값을 조금 넘은 후보를 차례로 보충한다.
+        if 20.0 <= rsi <= 28.0:
+            band, distance = 0, 28.0 - rsi
+        elif rsi < 20.0:
+            band, distance = 1, 20.0 - rsi
+        else:
+            band, distance = 2, rsi - 28.0
+        return (affordable(item), band, distance,
+                -item[2]["previous_trading_value"])
+
+    rsi_count = min(top_n, round(top_n * 0.6))
+    rsi_selected = sorted(candidates, key=rsi_key)[:rsi_count]
+    selected_codes = {item[1] for item in rsi_selected}
+    for item in rsi_selected:
+        item[2]["screening_bucket"] = "RSI 반등 대기"
+
+    remaining = [item for item in candidates if item[1] not in selected_codes]
+    remaining.sort(key=lambda item: (
+        affordable(item),
+        not item[2].get("vbo_trend_ready", False),
+        -item[2]["previous_trading_value"],
+    ))
+    vbo_selected = remaining[:max(0, top_n - len(rsi_selected))]
+    for item in vbo_selected:
+        item[2]["screening_bucket"] = "VBO 준비"
+    return rsi_selected + vbo_selected
 
 class KiwoomRestAPI:
     """
@@ -141,7 +200,7 @@ class KiwoomRestAPI:
 
     def get_previous_day_universe(self, top_n, min_market_cap, max_market_cap,
                                   preferred_max_price=None, rank_pool=100):
-        """전일 거래량 풀을 전일 실제 거래대금으로 재정렬하고 매수 가능 종목을 우선한다."""
+        """전일 확정 데이터로 RSI 반등 대기와 VBO 준비 종목을 혼합 선발한다."""
         ranking_items = []
         ranges = [(0, 100)]
         ranges.extend((start, start + 99) for start in range(101, rank_pool, 100))
@@ -209,6 +268,9 @@ class KiwoomRestAPI:
                     previous_trading_value = previous_close * abs(
                         _number(item.get("trde_qty"))
                     )
+                previous_rsi, vbo_trend_ready = _completed_daily_metrics(
+                    completed_rows
+                )
                 candidates.append((name, code, {
                     "code": code,
                     "market": _market_name(info.get("marketName")),
@@ -217,17 +279,17 @@ class KiwoomRestAPI:
                     "previous_market_cap": previous_market_cap,
                     "previous_trading_value": previous_trading_value,
                     "trading_value_rank": rank + 1,
+                    "previous_rsi": (
+                        round(previous_rsi, 1) if previous_rsi is not None else None
+                    ),
+                    "vbo_trend_ready": vbo_trend_ready,
                 }))
 
-        if preferred_max_price and preferred_max_price > 0:
-            candidates.sort(key=lambda item: (
-                item[2]["previous_close"] > preferred_max_price,
-                -item[2]["previous_trading_value"],
-            ))
-        else:
-            candidates.sort(key=lambda item: -item[2]["previous_trading_value"])
-        selected = {name: code for name, code, _ in candidates[:top_n]}
-        metadata = {name: meta for name, _, meta in candidates[:top_n]}
+        mixed = _mixed_universe_candidates(
+            candidates, top_n, preferred_max_price
+        )
+        selected = {name: code for name, code, _ in mixed}
+        metadata = {name: meta for name, _, meta in mixed}
         self.last_universe_metadata = metadata
         return selected
 
