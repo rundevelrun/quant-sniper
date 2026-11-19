@@ -1159,6 +1159,29 @@ def run_trading_loop():
             )
             raw_signals.sort(key=lambda item: item["score"])
             market_favorable = any(market_regimes.values())
+            monitored_names = list(active_universe)
+
+            if account.get("ok"):
+                tradeability = build_tradeability(
+                    active_universe, universe_metadata, candles_dict,
+                    float(account.get("total_assets") or 0),
+                    float(account.get("cash") or 0), entry_size_multiplier,
+                    market_regimes,
+                )
+                # 전일 기준 스크리닝을 통과했더라도 장중 급등으로 현재 계좌에서
+                # 1주를 살 수 없으면 신호 평가·대시보드 감시에서 제외한다.
+                monitored_names = [
+                    item["name"] for item in tradeability if item.get("eligible")
+                ]
+                monitored_set = set(monitored_names)
+                raw_signals = [
+                    sig for sig in raw_signals if sig["name"] in monitored_set
+                ]
+                dashboard_context["tradeability"] = [
+                    item for item in tradeability if item.get("eligible")
+                ]
+                dashboard_context["universe_count"] = len(monitored_names)
+
             raw_signal_by_name = {sig["name"]: sig for sig in raw_signals}
             dashboard_context.update({
                 "market_favorable": market_favorable,
@@ -1166,7 +1189,7 @@ def run_trading_loop():
                 "raw_signal_count": len(raw_signals),
                 "signal_diagnostics": [
                     {"name": name, **signal_diagnostics.get(name, {})}
-                    for name in active_universe
+                    for name in monitored_names
                 ],
                 "signal_statuses": [
                     {
@@ -1180,17 +1203,9 @@ def run_trading_loop():
                             (name, raw_signal_by_name.get(name, {}).get("strategy")), 0
                         ) if name in raw_signal_by_name else 0,
                     }
-                    for name in active_universe
+                    for name in monitored_names
                 ],
             })
-
-            if account.get("ok"):
-                dashboard_context["tradeability"] = build_tradeability(
-                    active_universe, universe_metadata, candles_dict,
-                    float(account.get("total_assets") or 0),
-                    float(account.get("cash") or 0), entry_size_multiplier,
-                    market_regimes,
-                )
                 
             # 2. 보유 포지션 감시 및 청산 체크 (동적 손절, 트레일링 스탑, 익절)
             closed_positions = []
