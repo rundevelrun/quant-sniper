@@ -512,7 +512,7 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(api.last_universe_metadata["후보주"]["sector"], "반도체")
         self.assertEqual(api.last_universe_metadata["후보주"]["market"], "KOSPI")
 
-    def test_screener_prioritizes_affordable_candidate_without_dropping_rank(self):
+    def test_screener_excludes_candidate_account_cannot_afford(self):
         with patch.object(config, "LIVE_TRADING_ENABLED", True):
             api = KiwoomRestAPI("key", "secret", "account")
         api._post_domestic = unittest.mock.Mock(side_effect=[
@@ -536,8 +536,34 @@ class SafetyTests(unittest.TestCase):
         universe = api.get_previous_day_universe(
             2, 500_000_000_000, 5_000_000_000_000, 30000
         )
-        self.assertEqual(list(universe), ["매수가능주", "고가주"])
-        self.assertEqual(api.last_universe_metadata["고가주"]["trading_value_rank"], 1)
+        self.assertEqual(list(universe), ["매수가능주"])
+        self.assertNotIn("고가주", api.last_universe_metadata)
+
+    def test_mixed_universe_does_not_fill_with_unaffordable_symbols(self):
+        candidates = [
+            ("가능주", "000001", {
+                "previous_close": 20000,
+                "previous_trading_value": 1000000,
+                "previous_rsi": 25.0,
+                "vbo_trend_ready": False,
+            }),
+            ("고가RSI", "000002", {
+                "previous_close": 80000,
+                "previous_trading_value": 3000000,
+                "previous_rsi": 20.0,
+                "vbo_trend_ready": False,
+            }),
+            ("고가VBO", "000003", {
+                "previous_close": 90000,
+                "previous_trading_value": 4000000,
+                "previous_rsi": 50.0,
+                "vbo_trend_ready": True,
+            }),
+        ]
+
+        selected = _mixed_universe_candidates(candidates, 30, 30000)
+
+        self.assertEqual([item[0] for item in selected], ["가능주"])
 
     def test_screening_price_cap_uses_unfavorable_risk_budget(self):
         cap = screening_preferred_max_price({

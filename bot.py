@@ -38,7 +38,7 @@ DASHBOARD_EVENTS_FILE = os.path.join(BASE_DIR, "dashboard_events.json")
 DASHBOARD_STATE_FILE = os.path.join(BASE_DIR, "dashboard_state.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
 CURRENT_MARKET_OPEN = False
-UNIVERSE_STRATEGY_VERSION = "rsi_vbo_mixed_v3"
+UNIVERSE_STRATEGY_VERSION = "rsi_vbo_mixed_v4"
 
 def acquire_instance_lock():
     lock_handle = open(LOCK_FILE, "w", encoding="utf-8")

@@ -35,15 +35,17 @@ def _completed_daily_metrics(rows):
     return previous_rsi, trend_ready
 
 def _mixed_universe_candidates(candidates, top_n, preferred_max_price=None):
-    """RSI<=28을 최대 60% 선발하고 부족한 자리는 VBO 후보로 채운다."""
+    """1주 매수 가능한 종목 중 RSI<=28과 VBO 후보만 선발한다."""
     if not candidates or top_n <= 0:
         return []
 
-    def affordable(item):
-        return bool(
-            preferred_max_price and preferred_max_price > 0
-            and item[2]["previous_close"] > preferred_max_price
-        )
+    if preferred_max_price and preferred_max_price > 0:
+        candidates = [
+            item for item in candidates
+            if item[2]["previous_close"] <= preferred_max_price
+        ]
+    if not candidates:
+        return []
 
     def rsi_key(item):
         rsi = item[2].get("previous_rsi")
@@ -52,8 +54,7 @@ def _mixed_universe_candidates(candidates, top_n, preferred_max_price=None):
             band, distance = 0, 28.0 - rsi
         else:
             band, distance = 1, 20.0 - rsi
-        return (affordable(item), band, distance,
-                -item[2]["previous_trading_value"])
+        return (band, distance, -item[2]["previous_trading_value"])
 
     rsi_count = min(top_n, 15, round(top_n * 0.6))
     eligible_rsi = [
@@ -68,7 +69,6 @@ def _mixed_universe_candidates(candidates, top_n, preferred_max_price=None):
 
     remaining = [item for item in candidates if item[1] not in selected_codes]
     remaining.sort(key=lambda item: (
-        affordable(item),
         not item[2].get("vbo_trend_ready", False),
         -item[2]["previous_trading_value"],
     ))
