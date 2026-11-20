@@ -309,7 +309,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         '<table width="100%">',
         '<thead><tr>',
         '<th width="18%">종목</th><th width="16%">전략</th>',
-        '<th width="10%">수익률</th><th width="10%">보유 기간</th>',
+        '<th width="70" nowrap>수익률</th><th width="10%">보유 기간</th>',
         '<th width="12%">현재 보호</th><th width="34%">청산 계획</th>',
         '</tr></thead><tbody>',
     ]
@@ -345,7 +345,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 '<tr>'
                 f'<td>{html.escape(str(display_name))}</td>'
                 f'<td>{html.escape(str(display_strategy))}</td>'
-                f'<td align="right" valign="middle">{dashboard_return(return_pct, f'position-{pos.get('code', 'unknown')}', context, html_image=True)}</td>'
+                f'<td width="70" nowrap align="right" valign="middle">{dashboard_return(return_pct, f'position-{pos.get('code', 'unknown')}', context, html_image=True)}</td>'
                 f'<td align="right">{int(pos.get("days_held", 0))}일</td>'
                 f'<td>{html.escape(protection)}</td>'
                 f'<td>{html.escape(exit_plan)}</td>'
@@ -425,12 +425,12 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         '<table width="100%">',
         '<thead><tr>',
         '<th width="18%">신규 매수</th><th width="28%">계좌 고점 대비 낙폭</th>',
-        '<th width="18%">오늘 수익률</th><th width="18%">주문 배율</th>',
+        '<th width="70" nowrap>오늘 수익률</th><th width="18%">주문 배율</th>',
         '<th width="18%">남은 슬롯</th>',
         '</tr></thead><tbody><tr>',
         f'<td>{"가능" if context.get("entry_allowed", False) else "중단"}</td>',
         f'<td align="right">{f"{drawdown:.2f}%" if drawdown is not None else "-"}</td>',
-        f'<td align="right" valign="middle">{dashboard_return(daily_return, "daily-return", context, html_image=True)}</td>',
+        f'<td width="70" nowrap align="right" valign="middle">{dashboard_return(daily_return, "daily-return", context, html_image=True)}</td>',
         f'<td align="right">{float(context.get("entry_size_multiplier", 1.0))*100:.0f}%</td>',
         f'<td align="right">{max(0, MAX_POSITIONS-len(positions))}</td>',
         '</tr></tbody></table>',
