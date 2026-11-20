@@ -45,9 +45,9 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("+1.25%", profit)
         self.assertIn("#0969da", loss)
         self.assertIn("-0.75%", loss)
-        self.assertIn('font-size="14"', profit)
+        self.assertIn('font-size="16"', profit)
         self.assertIn('font-weight="700"', profit)
-        self.assertIn('y="18"', profit)
+        self.assertIn('y="20"', profit)
 
     def test_screener_mixes_rsi_watch_and_vbo_candidates(self):
         candidates = []

@@ -156,13 +156,13 @@ def return_pct_svg(value):
     value = float(value)
     text = f"{value:+.2f}%"
     color = "#cf222e" if value > 0 else "#0969da" if value < 0 else "#57606a"
-    width = max(58, 11 * len(text))
+    width = max(66, 12 * len(text))
     return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="20" '
-        f'viewBox="0 0 {width} 20" role="img" aria-label="{html.escape(text)}">'
-        f'<text x="{width - 2}" y="18" text-anchor="end" fill="{color}" '
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="22" '
+        f'viewBox="0 0 {width} 22" role="img" aria-label="{html.escape(text)}">'
+        f'<text x="{width - 2}" y="20" text-anchor="end" fill="{color}" '
         'font-family="system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" '
-        f'font-size="14" font-weight="700">{html.escape(text)}</text></svg>'
+        f'font-size="16" font-weight="700">{html.escape(text)}</text></svg>'
     )
 
 def dashboard_return(value, asset_name, context):
