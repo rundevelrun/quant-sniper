@@ -206,6 +206,10 @@ class SafetyTests(unittest.TestCase):
         self.assertNotIn("| 2 |", markdown)
         self.assertIn("| 시스템 | 장 운영 |", markdown)
         self.assertIn("🟢 정상", markdown)
+        self.assertLess(markdown.index("## 전략별 현재 판단"),
+                        markdown.index("## 현재 보유 포지션"))
+        self.assertLess(markdown.index("## 현재 보유 포지션"),
+                        markdown.index("## 전체 성과"))
 
     def test_dashboard_status_uses_traffic_light_icons(self):
         self.assertEqual(dashboard_status_label("running"), "🟢 정상")

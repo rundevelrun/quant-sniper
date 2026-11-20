@@ -174,6 +174,23 @@ def dashboard_return(value, asset_name, context):
     context.setdefault("svg_assets", {})[asset_name] = return_pct_svg(value)
     return f"![{text}](svg/{asset_name}.svg)"
 
+def order_dashboard_sections(lines, order):
+    """완성된 Markdown 섹션을 지정된 운영 우선순위로 재배치한다."""
+    starts = [index for index, line in enumerate(lines) if line.startswith("## ")]
+    if not starts:
+        return lines
+    prefix = lines[:starts[0]]
+    sections = {}
+    for offset, start in enumerate(starts):
+        end = starts[offset + 1] if offset + 1 < len(starts) else len(lines)
+        sections[lines[start][3:]] = lines[start:end]
+    ordered = list(prefix)
+    for title in order:
+        ordered.extend(sections.pop(title, []))
+    for section in sections.values():
+        ordered.extend(section)
+    return ordered
+
 def dashboard_status_label(status):
     """운영 상태를 GitHub 대시보드용 신호등 레이블로 변환한다."""
     if status == "running":
@@ -402,6 +419,15 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f"| {max_loss_streak}회 "
         f"| {f'{aggregate_cost_rate:.2f}%' if aggregate_cost_rate is not None else '-'} |",
     ]
+    lines = order_dashboard_sections(lines, [
+        "현재 상태",
+        "전략별 현재 판단",
+        "현재 보유 포지션",
+        "전체 성과",
+        "유력 감시 종목",
+        "위험 관리",
+        "최근 3일 중요 이벤트",
+    ])
     lines += ["", "> 수량·가격·원화 손익 등 민감한 계좌정보는 공개하지 않습니다.", ""]
     return "\n".join(lines)
 
