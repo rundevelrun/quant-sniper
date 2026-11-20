@@ -11,7 +11,7 @@ from bot import (
     calculate_entry_shares,
     entry_cash_after_reserve,
     build_operational_status, confirm_persistent_signals, dashboard_status_label,
-    is_dashboard_heartbeat_due,
+    is_dashboard_five_minute_due, is_dashboard_heartbeat_due,
     git_commit_and_push, is_entry_window,
     is_market_open, is_mim_entry_window, market_session_progress,
     mim_long_signal, save_json, trading_days_held, update_mim_state,
@@ -173,6 +173,22 @@ class SafetyTests(unittest.TestCase):
             after_first_push.timestamp(), second_slot,
         ))
 
+    def test_dashboard_position_refresh_uses_fixed_five_minute_slots(self):
+        previous_push = datetime.datetime(2026, 11, 19, 9, 0, 11).timestamp()
+        self.assertFalse(is_dashboard_five_minute_due(
+            previous_push, datetime.datetime(2026, 11, 19, 9, 5, 9)
+        ))
+        self.assertTrue(is_dashboard_five_minute_due(
+            previous_push, datetime.datetime(2026, 11, 19, 9, 5, 10)
+        ))
+        just_pushed = datetime.datetime(2026, 11, 19, 9, 7, 0).timestamp()
+        self.assertFalse(is_dashboard_five_minute_due(
+            just_pushed, datetime.datetime(2026, 11, 19, 9, 10, 9)
+        ))
+        self.assertTrue(is_dashboard_five_minute_due(
+            just_pushed, datetime.datetime(2026, 11, 19, 9, 10, 10)
+        ))
+
     def test_kiwoom_market_names_are_normalized(self):
         self.assertEqual(_market_name("거래소"), "KOSPI")
         self.assertEqual(_market_name("코스닥"), "KOSDAQ")
@@ -210,8 +226,8 @@ class SafetyTests(unittest.TestCase):
         self.assertIn('<table width="100%">', markdown)
         self.assertIn('width="44" height="22"', markdown)
         self.assertIn("## 현재 상태", markdown)
-        self.assertIn("보유 포지션 5분", markdown)
-        self.assertIn("00분 10초·30분 10초", markdown)
+        self.assertIn("보유 중 매 5분 10초", markdown)
+        self.assertIn("00·05·10…분", markdown)
         self.assertIn("## 현재 보유 포지션", markdown)
         self.assertIn("## 최근 3일 중요 이벤트", markdown)
         self.assertIn("## 전체 성과", markdown)
@@ -221,6 +237,8 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("| 시스템 | 장 운영 |", markdown)
         self.assertIn("🟢 정상", markdown)
         self.assertLess(markdown.index("## 전략별 현재 판단"),
+                        markdown.index("## 현재 보유 포지션"))
+        self.assertLess(markdown.index("## 위험 관리"),
                         markdown.index("## 현재 보유 포지션"))
         self.assertLess(markdown.index("## 현재 보유 포지션"),
                         markdown.index("## 전체 성과"))

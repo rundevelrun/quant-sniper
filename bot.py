@@ -110,6 +110,15 @@ def is_dashboard_heartbeat_due(last_push_time, now=None):
         latest_slot -= datetime.timedelta(minutes=30)
     return last_push_time < latest_slot.timestamp()
 
+def is_dashboard_five_minute_due(last_push_time, now=None):
+    """매 5분 단위의 10초 시점이 지난 뒤 정기 갱신 여부를 반환한다."""
+    now = now or datetime.datetime.now()
+    slot_minute = (now.minute // 5) * 5
+    latest_slot = now.replace(minute=slot_minute, second=10, microsecond=0)
+    if now < latest_slot:
+        latest_slot -= datetime.timedelta(minutes=5)
+    return last_push_time < latest_slot.timestamp()
+
 def update_dashboard_events(events, event, now=None, retention_days=3):
     """최근 3일 이벤트만 유지하고 반복 스킵은 한 항목의 횟수로 합친다."""
     now = now or datetime.datetime.now()
@@ -283,7 +292,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     lines = [
         "# Quant Sniper Dashboard", "",
         f"> 마지막 갱신: **{now.strftime('%Y-%m-%d %H:%M:%S')} KST**  ",
-        "> 갱신 주기: **보유 포지션 5분 · 상태/신호/거래 변경 즉시 · 무변화 시 매시 00분 10초·30분 10초**", "",
+        "> 갱신 주기: **보유 중 매 5분 10초(00·05·10…분) · 상태/신호/거래 변경 즉시 · 무보유·무변화 시 00분 10초·30분 10초**", "",
         "## 현재 상태", "",
         "| 시스템 | 장 운영 | 시장 국면 | 신규 매수 | 보유 포지션 |",
         "|---|---|---|---|---:|",
@@ -457,10 +466,10 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     lines = order_dashboard_sections(lines, [
         "현재 상태",
         "전략별 현재 판단",
+        "위험 관리",
         "현재 보유 포지션",
         "전체 성과",
         "유력 감시 종목",
-        "위험 관리",
         "최근 3일 중요 이벤트",
     ])
     lines += ["", "> 수량·가격·원화 손익 등 민감한 계좌정보는 공개하지 않습니다.", ""]
@@ -1935,7 +1944,9 @@ def run_trading_loop():
                 dashboard_critical = True
                 last_published_state = current_state
 
-            dashboard_due = time.time() - last_dashboard_push_time >= 300
+            dashboard_due = is_dashboard_five_minute_due(
+                last_dashboard_push_time, now
+            )
             dashboard_heartbeat_due = is_dashboard_heartbeat_due(
                 last_dashboard_push_time
             )
