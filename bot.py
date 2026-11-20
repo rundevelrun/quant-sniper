@@ -171,11 +171,14 @@ def return_pct_svg(value):
 def dashboard_return(value, asset_name, context):
     if value is None:
         return "-"
-    text = f"{float(value):+.2f}%"
+    numeric_value = float(value)
+    text = f"{numeric_value:+.2f}%"
     if not context.get("svg_returns"):
         return text
-    context.setdefault("svg_assets", {})[asset_name] = return_pct_svg(value)
-    return f"![{text}](svg/{asset_name}.svg)"
+    value_token = f"{numeric_value:+.2f}".replace("+", "p").replace("-", "m").replace(".", "_")
+    versioned_name = f"{asset_name}-v2-{value_token}"
+    context.setdefault("svg_assets", {})[versioned_name] = return_pct_svg(numeric_value)
+    return f"![{text}](svg/{versioned_name}.svg)"
 
 def order_dashboard_sections(lines, order):
     """완성된 Markdown 섹션을 지정된 운영 우선순위로 재배치한다."""
