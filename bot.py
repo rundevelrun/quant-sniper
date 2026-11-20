@@ -162,7 +162,7 @@ def return_pct_svg(value):
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="22" '
         f'viewBox="0 0 {width} 22" role="img" aria-label="{html.escape(text)}">'
-        f'<text x="{width - 2}" y="17" text-anchor="end" fill="{color}" '
+        f'<text x="{width - 2}" y="14" text-anchor="end" fill="{color}" '
         'font-family="system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" '
         f'font-size="16" font-weight="700" textLength="40" '
         f'lengthAdjust="spacingAndGlyphs">{html.escape(text)}</text></svg>'
@@ -176,7 +176,7 @@ def dashboard_return(value, asset_name, context, html_image=False):
     if not context.get("svg_returns"):
         return text
     value_token = f"{numeric_value:+.2f}".replace("+", "p").replace("-", "m").replace(".", "_")
-    versioned_name = f"{asset_name}-v4-{value_token}"
+    versioned_name = f"{asset_name}-v5-{value_token}"
     context.setdefault("svg_assets", {})[versioned_name] = return_pct_svg(numeric_value)
     if html_image:
         return (
