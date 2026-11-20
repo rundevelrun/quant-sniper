@@ -239,7 +239,9 @@ class SafetyTests(unittest.TestCase):
         self.assertLess(markdown.index("## 전략별 현재 판단"),
                         markdown.index("## 현재 보유 포지션"))
         self.assertLess(markdown.index("## 현재 보유 포지션"),
-                        markdown.index("## 위험 관리"))
+                        markdown.index("## 계좌 안전장치"))
+        self.assertNotIn("<th width=\"14%\">거래당 위험</th>", markdown)
+        self.assertNotIn("종목당 한도</th>", markdown)
         self.assertLess(markdown.index("## 현재 보유 포지션"),
                         markdown.index("## 전체 성과"))
 

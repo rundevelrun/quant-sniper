@@ -418,20 +418,17 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     drawdown = context.get("account_drawdown_pct")
     daily_return = context.get("daily_return_pct")
     lines += [
-        "", "## 위험 관리", "",
+        "", "## 계좌 안전장치", "",
         '<table width="100%">',
         '<thead><tr>',
-        '<th width="14%">신규 매수</th><th width="18%">계좌 고점 대비 낙폭</th>',
-        '<th width="14%">오늘 수익률</th><th width="12%">주문 배율</th>',
-        '<th width="14%">거래당 위험</th><th width="14%">종목당 한도</th>',
-        '<th width="14%">남은 슬롯</th>',
+        '<th width="18%">신규 매수</th><th width="28%">계좌 고점 대비 낙폭</th>',
+        '<th width="18%">오늘 수익률</th><th width="18%">주문 배율</th>',
+        '<th width="18%">남은 슬롯</th>',
         '</tr></thead><tbody><tr>',
         f'<td>{"가능" if context.get("entry_allowed", False) else "중단"}</td>',
         f'<td align="right">{f"{drawdown:.2f}%" if drawdown is not None else "-"}</td>',
         f'<td align="right" valign="middle">{dashboard_return(daily_return, "daily-return", context, html_image=True)}</td>',
         f'<td align="right">{float(context.get("entry_size_multiplier", 1.0))*100:.0f}%</td>',
-        '<td align="right">0.7%</td>',
-        f'<td align="right">{MAX_ALLOC_PER_STOCK*100:.0f}%</td>',
         f'<td align="right">{max(0, MAX_POSITIONS-len(positions))}</td>',
         '</tr></tbody></table>',
     ]
@@ -467,7 +464,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "현재 상태",
         "전략별 현재 판단",
         "현재 보유 포지션",
-        "위험 관리",
+        "계좌 안전장치",
         "전체 성과",
         "유력 감시 종목",
         "최근 3일 중요 이벤트",
