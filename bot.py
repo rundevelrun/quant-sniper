@@ -244,8 +244,6 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "| 종목 | 전략 | 수익률 | 보유 기간 | 현재 보호 | 청산 계획 |",
         "|---|---|---:|---:|---|---|",
     ]
-    if not realtime_ok and realtime_error:
-        lines += ["", f"> WebSocket 상태: {_md(realtime_error)}"]
     if positions:
         for name, pos in positions.items():
             quote = realtime.quote(pos.get("code", ""))
@@ -274,6 +272,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             )
     else:
         lines.append("| 보유 종목 없음 | - | - | - | - | - |")
+    if not realtime_ok and realtime_error:
+        lines += ["", f"> WebSocket 상태: {_md(realtime_error)}"]
 
     mim_state = context.get("mim_state", {})
     lines += [
