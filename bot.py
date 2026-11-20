@@ -33,6 +33,7 @@ from config import (
 from strategy import calculate_atr, evaluate_signals, is_favorable_market
 from kiwoom_api import KiwoomRestAPI
 from kiwoom_realtime import KiwoomRealtimeFeed
+from research_store import record_research_snapshot
 
 TRADES_FILE = os.path.join(BASE_DIR, "trades.json")
 POSITIONS_FILE = os.path.join(BASE_DIR, "positions.json")
@@ -44,6 +45,7 @@ DASHBOARD_EVENTS_FILE = os.path.join(BASE_DIR, "dashboard_events.json")
 DASHBOARD_STATE_FILE = os.path.join(BASE_DIR, "dashboard_state.json")
 MIM_STATE_FILE = os.path.join(BASE_DIR, "mim_state.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
+RESEARCH_DB_FILE = os.path.join(BASE_DIR, "research_data.db")
 CURRENT_MARKET_OPEN = False
 UNIVERSE_STRATEGY_VERSION = "rsi_vbo_mixed_v5"
 MIM_STRATEGY = "KODEX200 장마감 30분 모멘텀"
@@ -1808,6 +1810,20 @@ def run_trading_loop():
                 ),
             })
             update_health_status(status=status, detail=detail)
+
+            # 분석 원본은 GitHub에 올리지 않고 로컬 SQLite에 5분 단위로 누적한다.
+            try:
+                research_quotes = {}
+                for research_pos in positions.values():
+                    research_quote = realtime.quote(research_pos.get("code", ""))
+                    if research_quote:
+                        research_quotes[research_pos["code"]] = research_quote.get("price")
+                record_research_snapshot(
+                    RESEARCH_DB_FILE, now, status, detail, CURRENT_MARKET_OPEN,
+                    dashboard_context, positions, research_quotes, trades,
+                )
+            except Exception as research_error:
+                print(f"[RESEARCH] 로컬 분석 데이터 저장 실패: {research_error}")
 
             # 정상↔위험 상태가 바뀌면 30분 주기를 기다리지 않고 즉시 피클AI에 공개한다.
             current_state = (status, detail)

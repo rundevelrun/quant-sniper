@@ -2,6 +2,9 @@
 __pycache__/
 *.pyc
 *.log
+research_data.db
+research_data.db-shm
+research_data.db-wal
 universe.json
 risk_state.json
 health.json
