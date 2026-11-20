@@ -48,6 +48,8 @@ class SafetyTests(unittest.TestCase):
         self.assertIn('font-size="16"', profit)
         self.assertIn('font-weight="700"', profit)
         self.assertIn('y="20"', profit)
+        self.assertIn('width="56"', profit)
+        self.assertIn('textLength="52"', profit)
 
     def test_screener_mixes_rsi_watch_and_vbo_candidates(self):
         candidates = []

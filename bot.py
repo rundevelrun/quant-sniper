@@ -156,13 +156,16 @@ def return_pct_svg(value):
     value = float(value)
     text = f"{value:+.2f}%"
     color = "#cf222e" if value > 0 else "#0969da" if value < 0 else "#57606a"
-    width = max(66, 12 * len(text))
+    # GitHub 표는 좁은 셀의 이미지를 max-width:100%로 축소하므로,
+    # 모든 수익률 자산을 가장 좁은 열에도 들어가는 동일 크기로 고정한다.
+    width = 56
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="22" '
         f'viewBox="0 0 {width} 22" role="img" aria-label="{html.escape(text)}">'
         f'<text x="{width - 2}" y="20" text-anchor="end" fill="{color}" '
         'font-family="system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" '
-        f'font-size="16" font-weight="700">{html.escape(text)}</text></svg>'
+        f'font-size="16" font-weight="700" textLength="52" '
+        f'lengthAdjust="spacingAndGlyphs">{html.escape(text)}</text></svg>'
     )
 
 def dashboard_return(value, asset_name, context):
