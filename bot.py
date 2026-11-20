@@ -282,7 +282,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     }.get(rotation.get("regime"), "계산 대기")
     lines = [
         "# Quant Sniper Dashboard", "",
-        f"> 마지막 갱신: **{now.strftime('%Y-%m-%d %H:%M:%S')} KST**", "",
+        f"> 마지막 갱신: **{now.strftime('%Y-%m-%d %H:%M:%S')} KST**  ",
+        "> 갱신 주기: **보유 포지션 5분 · 상태/신호/거래 변경 즉시 · 무변화 시 매시 00분 10초·30분 10초**", "",
         "## 현재 상태", "",
         "| 시스템 | 장 운영 | 시장 국면 | 신규 매수 | 보유 포지션 |",
         "|---|---|---|---|---:|",

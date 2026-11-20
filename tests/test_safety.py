@@ -210,6 +210,8 @@ class SafetyTests(unittest.TestCase):
         self.assertIn('<table width="100%">', markdown)
         self.assertIn('width="44" height="22"', markdown)
         self.assertIn("## 현재 상태", markdown)
+        self.assertIn("보유 포지션 5분", markdown)
+        self.assertIn("00분 10초·30분 10초", markdown)
         self.assertIn("## 현재 보유 포지션", markdown)
         self.assertIn("## 최근 3일 중요 이벤트", markdown)
         self.assertIn("## 전체 성과", markdown)
