@@ -4,6 +4,7 @@ import json
 import datetime
 import subprocess
 import fcntl
+import html
 from env_loader import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -150,6 +151,29 @@ def record_dashboard_event(event_type, name="", code="", reason="", **details):
 def _md(value):
     return str(value if value is not None else "-").replace("|", "\\|").replace("\n", " ")
 
+def return_pct_svg(value):
+    """GitHub에서 그대로 렌더링되는 투명 배경 수익률 SVG를 만든다."""
+    value = float(value)
+    text = f"{value:+.2f}%"
+    color = "#cf222e" if value > 0 else "#0969da" if value < 0 else "#57606a"
+    width = max(58, 11 * len(text))
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="20" '
+        f'viewBox="0 0 {width} 20" role="img" aria-label="{html.escape(text)}">'
+        f'<text x="{width - 2}" y="15" text-anchor="end" fill="{color}" '
+        'font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" '
+        f'font-size="14" font-weight="600">{html.escape(text)}</text></svg>'
+    )
+
+def dashboard_return(value, asset_name, context):
+    if value is None:
+        return "-"
+    text = f"{float(value):+.2f}%"
+    if not context.get("svg_returns"):
+        return text
+    context.setdefault("svg_assets", {})[asset_name] = return_pct_svg(value)
+    return f"![{text}](svg/{asset_name}.svg)"
+
 def dashboard_status_label(status):
     """운영 상태를 GitHub 대시보드용 신호등 레이블로 변환한다."""
     if status == "running":
@@ -269,7 +293,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             )
             lines.append(
                 f"| {_md(name)} | {_md(strategy)} "
-                f"| {f'{return_pct:+.2f}%' if return_pct is not None else '-'} "
+                f"| {dashboard_return(return_pct, f'position-{pos.get('code', 'unknown')}', context)} "
                 f"| {int(pos.get('days_held', 0))}일 | {protection} | {exit_plan} |"
             )
     else:
@@ -346,7 +370,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "|---|---:|---:|---:|---:|---:|---:|",
         f"| {'가능' if context.get('entry_allowed', False) else '중단'} "
         f"| {f'{drawdown:.2f}%' if drawdown is not None else '-'} "
-        f"| {f'{daily_return:+.2f}%' if daily_return is not None else '-'} "
+        f"| {dashboard_return(daily_return, 'daily-return', context)} "
         f"| {float(context.get('entry_size_multiplier', 1.0))*100:.0f}% "
         f"| 0.7% | {MAX_ALLOC_PER_STOCK*100:.0f}% | {max(0, MAX_POSITIONS-len(positions))} |",
     ]
@@ -371,9 +395,9 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "|---:|---:|---:|---:|---:|---:|---:|---:|",
         f"| {len(all_returns)} "
         f"| {f'{all_win_rate:.1f}%' if all_win_rate is not None else '-'} "
-        f"| {f'{aggregate_net_return:+.2f}%' if aggregate_net_return is not None else '-'} "
-        f"| {f'{average_win:+.2f}%' if average_win is not None else '-'} "
-        f"| {f'{average_loss:+.2f}%' if average_loss is not None else '-'} "
+        f"| {dashboard_return(aggregate_net_return, 'aggregate-return', context)} "
+        f"| {dashboard_return(average_win, 'average-win', context)} "
+        f"| {dashboard_return(average_loss, 'average-loss', context)} "
         f"| {f'{profit_factor:.2f}' if profit_factor is not None else '-'} "
         f"| {max_loss_streak}회 "
         f"| {f'{aggregate_cost_rate:.2f}%' if aggregate_cost_rate is not None else '-'} |",
@@ -388,6 +412,7 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
     events = load_json(DASHBOARD_EVENTS_FILE, [])
     render_context = dict(context or {})
     render_context["all_trades"] = load_json(TRADES_FILE, [])
+    render_context["svg_returns"] = True
     now = datetime.datetime.now()
     realtime_ok, realtime_error = realtime.is_healthy()
     state_positions = []
@@ -462,11 +487,26 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
             ["git", "hash-object", "-w", "dashboard_state.json"], cwd=BASE_DIR,
             capture_output=True, text=True, check=True,
         ).stdout.strip()
+        svg_entries = []
+        for asset_name, svg in sorted(render_context.get("svg_assets", {}).items()):
+            svg_blob = subprocess.run(
+                ["git", "hash-object", "-w", "--stdin"], cwd=BASE_DIR,
+                input=svg, capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            svg_entries.append(f"100644 blob {svg_blob}\t{asset_name}.svg\n")
+        svg_tree = None
+        if svg_entries:
+            svg_tree = subprocess.run(
+                ["git", "mktree"], cwd=BASE_DIR, input="".join(svg_entries),
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
         tree_input = (
             f"100644 blob {dashboard_blob}\tREADME.md\n"
             f"100644 blob {events_blob}\tdashboard_events.json\n"
             f"100644 blob {state_blob}\tdashboard_state.json\n"
         )
+        if svg_tree:
+            tree_input += f"040000 tree {svg_tree}\tsvg\n"
         tree = subprocess.run(
             ["git", "mktree"], cwd=BASE_DIR, input=tree_input,
             capture_output=True, text=True, check=True,

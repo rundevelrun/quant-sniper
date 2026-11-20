@@ -19,7 +19,7 @@ from bot import (
     estimate_external_cash_flow, sector_limit_reached, time_stop_reason,
     screening_preferred_max_price,
     update_dashboard_events, update_position_stop,
-    render_dashboard,
+    render_dashboard, return_pct_svg,
 )
 from kiwoom_api import (
     KiwoomRestAPI, _market_name, _mixed_universe_candidates,
@@ -38,6 +38,14 @@ class FakeResponse:
 
 
 class SafetyTests(unittest.TestCase):
+    def test_return_svg_uses_red_for_profit_and_blue_for_loss(self):
+        profit = return_pct_svg(1.25)
+        loss = return_pct_svg(-0.75)
+        self.assertIn("#cf222e", profit)
+        self.assertIn("+1.25%", profit)
+        self.assertIn("#0969da", loss)
+        self.assertIn("-0.75%", loss)
+
     def test_screener_mixes_rsi_watch_and_vbo_candidates(self):
         candidates = []
         for index in range(20):
