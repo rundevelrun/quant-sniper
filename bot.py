@@ -466,8 +466,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     lines = order_dashboard_sections(lines, [
         "현재 상태",
         "전략별 현재 판단",
-        "위험 관리",
         "현재 보유 포지션",
+        "위험 관리",
         "전체 성과",
         "유력 감시 종목",
         "최근 3일 중요 이벤트",

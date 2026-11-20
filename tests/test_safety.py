@@ -238,8 +238,8 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("🟢 정상", markdown)
         self.assertLess(markdown.index("## 전략별 현재 판단"),
                         markdown.index("## 현재 보유 포지션"))
-        self.assertLess(markdown.index("## 위험 관리"),
-                        markdown.index("## 현재 보유 포지션"))
+        self.assertLess(markdown.index("## 현재 보유 포지션"),
+                        markdown.index("## 위험 관리"))
         self.assertLess(markdown.index("## 현재 보유 포지션"),
                         markdown.index("## 전체 성과"))
 
