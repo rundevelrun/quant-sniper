@@ -29,7 +29,8 @@ from config import (
     ETF_ROTATION_ENABLED, ETF_ROTATION_LONG_CODE,
     ETF_ROTATION_INVERSE_CODE, ETF_ROTATION_MA_PERIOD,
     ETF_ROTATION_SLOPE_DAYS, ETF_ROTATION_BAND_PCT,
-    ETF_ROTATION_ALLOC_PCT, ETF_ROTATION_STOP_LOSS_PCT
+    ETF_ROTATION_ALLOC_PCT, ETF_ROTATION_STOP_LOSS_PCT,
+    ETF_ROTATION_TRAILING_TRIGGER
 )
 from strategy import calculate_atr, evaluate_signals, is_favorable_market
 from kiwoom_api import KiwoomRestAPI
@@ -325,7 +326,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 display_strategy = "ETF 추세전환"
                 exit_plan = (
                     f"국면 전환 · -{float(pos.get('stop_loss_pct', ETF_ROTATION_STOP_LOSS_PCT))*100:.1f}% 손절"
-                    " · +4% 보호 · +8% 추적"
+                    " · +4% 보호 · +6% 추적"
                 )
             elif strategy == MIM_STRATEGY:
                 display_strategy = "장마감 모멘텀"
@@ -640,7 +641,12 @@ def update_position_stop(pos, current_price):
     pos["highest_price"] = highest_price
     stop_price = buy_price * (1 - stop_loss_pct)
 
-    if highest_price >= buy_price * (1 + TAKE_PROFIT_PCT):
+    trailing_trigger = (
+        ETF_ROTATION_TRAILING_TRIGGER
+        if pos.get("strategy") == ETF_ROTATION_STRATEGY
+        else TAKE_PROFIT_PCT
+    )
+    if highest_price >= buy_price * (1 + trailing_trigger):
         gap = float(pos.get("trailing_gap_pct", max(0.02, min(0.04, stop_loss_pct / 1.5))))
         pos["trailing_active"] = True
         stop_price = max(float(pos.get("trailing_stop_price", 0)), highest_price * (1 - gap))

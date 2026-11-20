@@ -70,13 +70,14 @@ ETF_ROTATION_SLOPE_DAYS = 5
 ETF_ROTATION_BAND_PCT = 0.01
 ETF_ROTATION_ALLOC_PCT = 0.30
 ETF_ROTATION_STOP_LOSS_PCT = 0.025
+ETF_ROTATION_TRAILING_TRIGGER = 0.060  # ETF 추세전환은 +6%부터 고점 추적
 
 # 💡 ATR 기반 동적 손절 및 손익비 규칙 (휩소 노이즈 방어)
 ATR_PERIOD = 14
 ATR_STOP_MULTIPLIER = 1.5      # 변동성(ATR) 기반 동적 손절 배수
 MIN_STOP_LOSS_PCT = 0.025      # 최소 손절선 2.5% (과매도 바닥권 일중 흔들림 노이즈 방어)
 MAX_STOP_LOSS_PCT = 0.040      # 최대 손절선 4.0% (과도한 손실 캡)
-MIN_RISK_REWARD_RATIO = 2.0    # 진입 신호의 기준 보상폭 산출용(청산은 +8% 이후 추적)
+MIN_RISK_REWARD_RATIO = 2.0    # 진입 신호의 기준 보상폭 산출용
 
 # 청산 및 리스크 관리 기본값
 STOP_LOSS_PCT = 0.030          # 기본 손절 기준선 (-3.0%)

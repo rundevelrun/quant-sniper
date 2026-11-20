@@ -766,6 +766,15 @@ class SafetyTests(unittest.TestCase):
         stop_after_pullback, _ = update_position_stop(pos, 10800)
         self.assertEqual(stop_after_pullback, stop)
 
+    def test_etf_rotation_starts_high_water_trailing_at_six_percent(self):
+        pos = {"buy_price": 10000, "stop_loss_pct": 0.025,
+               "trailing_gap_pct": 0.025, "highest_price": 10000,
+               "strategy": "시장 ETF 3상태 추세전환"}
+        stop, reason = update_position_stop(pos, 10600)
+        self.assertAlmostEqual(stop, 10335)
+        self.assertEqual(reason, "고점 추적 트레일링 스탑")
+        self.assertTrue(pos["trailing_active"])
+
 
 if __name__ == "__main__":
     unittest.main()
