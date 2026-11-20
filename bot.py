@@ -1351,6 +1351,7 @@ def run_trading_loop():
                         "take_profit_pct": 1.0,
                         "atr": float(rotation_quote["price"]) * ETF_ROTATION_STOP_LOSS_PCT,
                         "roundtrip_cost_pct": ETF_ROUNDTRIP_COST_PCT,
+                        "order_exchange": "KRX",
                     })
             if (
                 MIM_ENABLED and is_mim_entry_window(now)
@@ -1489,7 +1490,10 @@ def run_trading_loop():
                                   f"(broker={broker_qty}, local={pos['shares']})")
                             continue
                     before_qty = pos["shares"]
-                    order = api.send_sell_order(pos["code"], name, before_qty, exit_price, exit_reason)
+                    order = api.send_sell_order(
+                        pos["code"], name, before_qty, exit_price, exit_reason,
+                        exchange=pos.get("order_exchange", "SOR"),
+                    )
                     actual_exit_price = exit_price
                     if order.get("status") == "filled":
                         confirmed = True
@@ -1705,7 +1709,10 @@ def run_trading_loop():
                         before_qty = 0
                         if account.get("ok"):
                             before_qty = int(account["positions"].get(code, {}).get("shares", 0))
-                        order = api.send_buy_order(code, name, shares, entry_p)
+                        order = api.send_buy_order(
+                            code, name, shares, entry_p,
+                            exchange=sig.get("order_exchange", "SOR"),
+                        )
                         if order.get("status") == "filled":
                             filled_qty = shares
                             fill_price = entry_p
@@ -1720,8 +1727,24 @@ def run_trading_loop():
                             fill_price = 0
                         if filled_qty <= 0:
                             trading_halted = True
-                            risk_reasons.append(f"{name} 매수 체결 미확인")
-                            print(f"[{now_str}] [CRITICAL] 매수 체결 미확인: {name}; 장부 미반영 및 신규주문 중단")
+                            failure_detail = (
+                                order.get("message")
+                                if order.get("status") == "error"
+                                else fill.get("error", "체결 확인 시간 초과")
+                                if order.get("status") == "accepted"
+                                else "알 수 없는 주문 상태"
+                            )
+                            failure_reason = f"{name} 매수 실패: {failure_detail}"
+                            risk_reasons.append(failure_reason)
+                            record_dashboard_event(
+                                "RISK", name, code, failure_reason
+                            )
+                            dashboard_dirty = True
+                            dashboard_critical = True
+                            print(
+                                f"[{now_str}] [CRITICAL] {failure_reason}; "
+                                "장부 미반영 및 신규주문 중단"
+                            )
                             break
                         positions[name] = {
                             "code": code,
@@ -1741,6 +1764,7 @@ def run_trading_loop():
                             "roundtrip_cost_pct": sig.get(
                                 "roundtrip_cost_pct", TOTAL_ROUNDTRIP_COST_PCT
                             ),
+                            "order_exchange": sig.get("order_exchange", "SOR"),
                         }
                         if sig["strategy"] == MIM_STRATEGY:
                             mim_state["entry_attempted"] = True

@@ -553,6 +553,20 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 2)
 
     @patch("urllib.request.urlopen")
+    def test_etf_order_can_be_forced_to_krx(self, urlopen):
+        urlopen.return_value = FakeResponse({"return_code": 0, "ord_no": "123"})
+        with patch.object(config, "LIVE_TRADING_ENABLED", True):
+            api = KiwoomRestAPI("key", "secret", "account")
+        api.get_token = lambda: "token"
+        result = api.send_buy_order(
+            "114800", "KODEX 인버스 추세", 1, exchange="KRX"
+        )
+        request = urlopen.call_args.args[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(payload["dmst_stex_tp"], "KRX")
+
+    @patch("urllib.request.urlopen")
     def test_execution_uses_weighted_actual_fill_price(self, urlopen):
         urlopen.return_value = FakeResponse({
             "return_code": 0,

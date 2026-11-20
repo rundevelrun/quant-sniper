@@ -397,7 +397,8 @@ class KiwoomRestAPI:
             })
         return candles
 
-    def send_buy_order(self, code, name, qty, price=0, trade_type="3"):
+    def send_buy_order(self, code, name, qty, price=0, trade_type="3",
+                       exchange="SOR"):
         """
         주식 매수 주문 집행 (kt10000)
         - trade_type: "0" 보통(지정가), "3" 시장가 (기본값: 체결 지연 방지용 시장가)
@@ -414,7 +415,7 @@ class KiwoomRestAPI:
             "api-id": "kt10000"
         }
         body = {
-            "dmst_stex_tp": "SOR",  # 거래소 간 최선가 자동 탐색
+            "dmst_stex_tp": exchange,
             "stk_cd": code,
             "ord_qty": str(qty),
             "ord_uv": str(int(price)) if trade_type == "0" else "",
@@ -449,7 +450,8 @@ class KiwoomRestAPI:
             print(f"[ERR] 매수 주문 예외 발생: {e}")
             return {"status": "error", "message": str(e)}
 
-    def send_sell_order(self, code, name, qty, price=0, reason="손절/익절", trade_type="3"):
+    def send_sell_order(self, code, name, qty, price=0, reason="손절/익절",
+                        trade_type="3", exchange="SOR"):
         """
         주식 매도 주문 집행 (kt10001)
         - 칼손절 및 이익 보존을 위해 기본 '3' 시장가로 즉시 청산
@@ -465,7 +467,7 @@ class KiwoomRestAPI:
             "api-id": "kt10001"
         }
         body = {
-            "dmst_stex_tp": "SOR",
+            "dmst_stex_tp": exchange,
             "stk_cd": code,
             "ord_qty": str(qty),
             "ord_uv": str(int(price)) if trade_type == "0" else "",
