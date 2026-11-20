@@ -582,7 +582,8 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
             capture_output=True, text=True, check=True,
         ).stdout.strip()
         commit = subprocess.run(
-            ["git", "commit-tree", tree, "-m", "dashboard: rolling 7-day snapshot"],
+            ["git", "commit-tree", tree, "-m",
+             "dashboard: current state and rolling 3-day events"],
             cwd=BASE_DIR, capture_output=True, text=True, check=True,
         ).stdout.strip()
         subprocess.run(
