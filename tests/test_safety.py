@@ -48,16 +48,16 @@ class SafetyTests(unittest.TestCase):
         self.assertIn('font-size="16"', profit)
         self.assertIn('font-weight="700"', profit)
         self.assertIn('y="20"', profit)
-        self.assertIn('width="56"', profit)
-        self.assertIn('textLength="52"', profit)
+        self.assertIn('width="44"', profit)
+        self.assertIn('textLength="40"', profit)
 
     def test_dashboard_return_svg_url_changes_with_value_to_avoid_cache(self):
         from bot import dashboard_return
         context = {"svg_returns": True}
         first = dashboard_return(1.25, "position-1", context)
         second = dashboard_return(1.50, "position-1", context)
-        self.assertIn("position-1-v2-p1_25.svg", first)
-        self.assertIn("position-1-v2-p1_50.svg", second)
+        self.assertIn("position-1-v3-p1_25.svg", first)
+        self.assertIn("position-1-v3-p1_50.svg", second)
 
     def test_screener_mixes_rsi_watch_and_vbo_candidates(self):
         candidates = []
