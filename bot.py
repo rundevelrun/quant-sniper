@@ -301,21 +301,24 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             return_pct = ((current - buy) / buy * 100) if current and buy else None
             strategy = pos.get("strategy", "-")
             if strategy == ETF_ROTATION_STRATEGY:
+                display_strategy = "ETF 추세전환"
                 exit_plan = (
-                    f"국면 전환 또는 -{float(pos.get('stop_loss_pct', ETF_ROTATION_STOP_LOSS_PCT))*100:.1f}% 손절"
-                    " · +4% 보호 · +8% 고점 추적"
+                    f"국면 전환 · -{float(pos.get('stop_loss_pct', ETF_ROTATION_STOP_LOSS_PCT))*100:.1f}% 손절"
+                    " · +4% 보호 · +8% 추적"
                 )
             elif strategy == MIM_STRATEGY:
+                display_strategy = "장마감 모멘텀"
                 exit_plan = f"-{MIM_STOP_LOSS_PCT*100:.1f}% 손절 또는 {MIM_EXIT_TIME} 청산"
             else:
-                exit_plan = "ATR 손절 · +4% 보호 · +8% 고점 추적 · 타임스탑"
+                display_strategy = strategy
+                exit_plan = "ATR 손절 · +4% 보호 · +8% 추적 · 타임스탑"
             protection = (
                 "고점 추적 ON" if pos.get("trailing_active")
                 else "수익 보호 ON" if pos.get("trailing_stop_price")
                 else "초기 손절"
             )
             lines.append(
-                f"| {_md(name)} | {_md(strategy)} "
+                f"| {_md(name)} | {_md(display_strategy)} "
                 f"| {dashboard_return(return_pct, f'position-{pos.get('code', 'unknown')}', context)} "
                 f"| {int(pos.get('days_held', 0))}일 | {protection} | {exit_plan} |"
             )
