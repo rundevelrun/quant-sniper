@@ -300,7 +300,9 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             buy = float(pos.get("buy_price", 0))
             return_pct = ((current - buy) / buy * 100) if current and buy else None
             strategy = pos.get("strategy", "-")
+            display_name = name
             if strategy == ETF_ROTATION_STRATEGY:
+                display_name = name.removesuffix(" 추세")
                 display_strategy = "ETF 추세전환"
                 exit_plan = (
                     f"국면 전환 · -{float(pos.get('stop_loss_pct', ETF_ROTATION_STOP_LOSS_PCT))*100:.1f}% 손절"
@@ -318,7 +320,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 else "초기 손절"
             )
             lines.append(
-                f"| {_md(name)} | {_md(display_strategy)} "
+                f"| {_md(display_name)} | {_md(display_strategy)} "
                 f"| {dashboard_return(return_pct, f'position-{pos.get('code', 'unknown')}', context)} "
                 f"| {int(pos.get('days_held', 0))}일 | {protection} | {exit_plan} |"
             )
