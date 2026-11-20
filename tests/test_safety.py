@@ -199,6 +199,26 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(dashboard_status_label("error"), "🔴 오류")
         self.assertEqual(dashboard_status_label("starting"), "🟡 starting")
 
+    def test_dashboard_cumulative_performance_hides_krw_amounts(self):
+        class Feed:
+            def is_healthy(self):
+                return True, ""
+
+        markdown = render_dashboard(
+            "running", "정규 감시 중", {}, Feed(), [],
+            context={"all_trades": [{
+                "type": "SELL", "shares": 2, "entry_price": 10000,
+                "net_return_pct": 4.0, "net_profit_krw": 800,
+                "cost_fee_krw": 40,
+            }]},
+        )
+        performance = markdown.split("## 3. 전체 누적 성과", 1)[1]
+        self.assertIn("거래가중 순수익률", performance)
+        self.assertIn("+4.00%", performance)
+        self.assertIn("0.20%", performance)
+        self.assertNotIn("800원", performance)
+        self.assertNotIn("40원", performance)
+
     def test_dashboard_lists_monitored_symbols_with_codes(self):
         class Feed:
             def quote(self, code):

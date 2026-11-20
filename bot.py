@@ -184,6 +184,18 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     average_loss = (sum(all_losses) / len(all_losses)) if all_losses else None
     total_net_profit = sum(float(trade.get("net_profit_krw", 0)) for trade in all_sells)
     total_cost = sum(float(trade.get("cost_fee_krw", 0)) for trade in all_sells)
+    total_entry_notional = sum(
+        float(trade.get("entry_price", 0)) * int(trade.get("shares", 0))
+        for trade in all_sells
+    )
+    aggregate_net_return = (
+        total_net_profit / total_entry_notional * 100
+        if total_entry_notional > 0 else None
+    )
+    aggregate_cost_rate = (
+        total_cost / total_entry_notional * 100
+        if total_entry_notional > 0 else None
+    )
     gross_win = sum(float(trade.get("net_profit_krw", 0)) for trade in all_sells
                     if float(trade.get("net_profit_krw", 0)) > 0)
     gross_loss = abs(sum(float(trade.get("net_profit_krw", 0)) for trade in all_sells
@@ -393,15 +405,16 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         lines.append("| - | - | 기록 없음 | - | - | - | - |")
     lines += [
         "", "## 3. 전체 누적 성과 — 전체 거래 이력", "",
-        "| 청산 거래 | 승률 | 누적 순손익 | 평균 이익률 | 평균 손실률 | Profit Factor | 최대 연속 손실 | 누적 비용 |",
+        "| 청산 거래 | 승률 | 거래가중 순수익률 | 평균 이익률 | 평균 손실률 | Profit Factor | 최대 연속 손실 | 거래가중 비용률 |",
         "|---:|---:|---:|---:|---:|---:|---:|---:|",
         f"| {len(all_returns)} "
         f"| {f'{all_win_rate:.1f}%' if all_win_rate is not None else '-'} "
-        f"| {total_net_profit:+,.0f}원 "
+        f"| {f'{aggregate_net_return:+.2f}%' if aggregate_net_return is not None else '-'} "
         f"| {f'{average_win:+.2f}%' if average_win is not None else '-'} "
         f"| {f'{average_loss:+.2f}%' if average_loss is not None else '-'} "
         f"| {f'{profit_factor:.2f}' if profit_factor is not None else '-'} "
-        f"| {max_loss_streak}회 | {total_cost:,.0f}원 |",
+        f"| {max_loss_streak}회 "
+        f"| {f'{aggregate_cost_rate:.2f}%' if aggregate_cost_rate is not None else '-'} |",
     ]
     lines += ["", "> 인증정보와 민감한 계좌정보는 기록하지 않습니다.", ""]
     return "\n".join(lines)
