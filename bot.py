@@ -168,7 +168,7 @@ def return_pct_svg(value):
         f'lengthAdjust="spacingAndGlyphs">{html.escape(text)}</text></svg>'
     )
 
-def dashboard_return(value, asset_name, context):
+def dashboard_return(value, asset_name, context, html_image=False):
     if value is None:
         return "-"
     numeric_value = float(value)
@@ -178,6 +178,11 @@ def dashboard_return(value, asset_name, context):
     value_token = f"{numeric_value:+.2f}".replace("+", "p").replace("-", "m").replace(".", "_")
     versioned_name = f"{asset_name}-v3-{value_token}"
     context.setdefault("svg_assets", {})[versioned_name] = return_pct_svg(numeric_value)
+    if html_image:
+        return (
+            f'<img src="svg/{versioned_name}.svg" alt="{html.escape(text)}" '
+            'width="44" height="22" align="middle">'
+        )
     return f"![{text}](svg/{versioned_name}.svg)"
 
 def order_dashboard_sections(lines, order):
@@ -290,8 +295,12 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f"> {_md(detail)} · 키움 실시간 {'정상' if realtime_ok else '연결 대기'}"
         f" · 마지막 계좌 확인 {_md(context.get('last_account_sync', '-'))}",
         "", "## 현재 보유 포지션", "",
-        "| 종목 | 전략 | 수익률 | 보유 기간 | 현재 보호 | 청산 계획 |",
-        "|---|---|---:|---:|---|---|",
+        '<table width="100%">',
+        '<thead><tr>',
+        '<th width="18%">종목</th><th width="16%">전략</th>',
+        '<th width="10%">수익률</th><th width="10%">보유 기간</th>',
+        '<th width="12%">현재 보호</th><th width="34%">청산 계획</th>',
+        '</tr></thead><tbody>',
     ]
     if positions:
         for name, pos in positions.items():
@@ -320,12 +329,18 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 else "초기 손절"
             )
             lines.append(
-                f"| {_md(display_name)} | {_md(display_strategy)} "
-                f"| {dashboard_return(return_pct, f'position-{pos.get('code', 'unknown')}', context)} "
-                f"| {int(pos.get('days_held', 0))}일 | {protection} | {exit_plan} |"
+                '<tr>'
+                f'<td>{html.escape(str(display_name))}</td>'
+                f'<td>{html.escape(str(display_strategy))}</td>'
+                f'<td align="right" valign="middle">{dashboard_return(return_pct, f'position-{pos.get('code', 'unknown')}', context, html_image=True)}</td>'
+                f'<td align="right">{int(pos.get("days_held", 0))}일</td>'
+                f'<td>{html.escape(protection)}</td>'
+                f'<td>{html.escape(exit_plan)}</td>'
+                '</tr>'
             )
     else:
-        lines.append("| 보유 종목 없음 | - | - | - | - | - |")
+        lines.append('<tr><td colspan="6">보유 종목 없음</td></tr>')
+    lines += ['</tbody></table>']
     if not realtime_ok and realtime_error:
         lines += ["", f"> WebSocket 상태: {_md(realtime_error)}"]
 
@@ -394,13 +409,21 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     daily_return = context.get("daily_return_pct")
     lines += [
         "", "## 위험 관리", "",
-        "| 신규 매수 | 계좌 고점 대비 낙폭 | 오늘 수익률 | 주문 배율 | 거래당 위험 | 종목당 한도 | 남은 슬롯 |",
-        "|---|---:|---:|---:|---:|---:|---:|",
-        f"| {'가능' if context.get('entry_allowed', False) else '중단'} "
-        f"| {f'{drawdown:.2f}%' if drawdown is not None else '-'} "
-        f"| {dashboard_return(daily_return, 'daily-return', context)} "
-        f"| {float(context.get('entry_size_multiplier', 1.0))*100:.0f}% "
-        f"| 0.7% | {MAX_ALLOC_PER_STOCK*100:.0f}% | {max(0, MAX_POSITIONS-len(positions))} |",
+        '<table width="100%">',
+        '<thead><tr>',
+        '<th width="14%">신규 매수</th><th width="18%">계좌 고점 대비 낙폭</th>',
+        '<th width="14%">오늘 수익률</th><th width="12%">주문 배율</th>',
+        '<th width="14%">거래당 위험</th><th width="14%">종목당 한도</th>',
+        '<th width="14%">남은 슬롯</th>',
+        '</tr></thead><tbody><tr>',
+        f'<td>{"가능" if context.get("entry_allowed", False) else "중단"}</td>',
+        f'<td align="right">{f"{drawdown:.2f}%" if drawdown is not None else "-"}</td>',
+        f'<td align="right" valign="middle">{dashboard_return(daily_return, "daily-return", context, html_image=True)}</td>',
+        f'<td align="right">{float(context.get("entry_size_multiplier", 1.0))*100:.0f}%</td>',
+        '<td align="right">0.7%</td>',
+        f'<td align="right">{MAX_ALLOC_PER_STOCK*100:.0f}%</td>',
+        f'<td align="right">{max(0, MAX_POSITIONS-len(positions))}</td>',
+        '</tr></tbody></table>',
     ]
     lines += [
         "", "## 최근 3일 중요 이벤트", "",

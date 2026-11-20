@@ -203,10 +203,12 @@ class SafetyTests(unittest.TestCase):
             "running", "정규 감시 중",
             {"후보주": {"code": "000001", "shares": 2, "buy_price": 10000,
                       "highest_price": 10500, "stop_loss_pct": 0.03}},
-            Feed(), [],
+            Feed(), [], context={"svg_returns": True},
         )
         self.assertIn("후보주", markdown)
         self.assertIn("+3.00%", markdown)
+        self.assertIn('<table width="100%">', markdown)
+        self.assertIn('width="44" height="22"', markdown)
         self.assertIn("## 현재 상태", markdown)
         self.assertIn("## 현재 보유 포지션", markdown)
         self.assertIn("## 최근 3일 중요 이벤트", markdown)
