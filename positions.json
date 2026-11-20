@@ -1,1 +1,19 @@
-{}
+{
+  "KODEX 인버스 추세": {
+    "code": "114800",
+    "sector": "미분류",
+    "shares": 64,
+    "buy_price": 1365.0,
+    "stop_loss_pct": 0.025,
+    "take_profit_pct": 1.0,
+    "days_held": 1,
+    "entry_date": "2026-11-20",
+    "last_held_date": "2026-11-20",
+    "trailing_active": false,
+    "highest_price": 1365.0,
+    "trailing_gap_pct": 0.024981684981684984,
+    "strategy": "시장 ETF 3상태 추세전환",
+    "roundtrip_cost_pct": 0.0023,
+    "order_exchange": "KRX"
+  }
+}
