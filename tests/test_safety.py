@@ -272,6 +272,31 @@ class SafetyTests(unittest.TestCase):
         self.assertNotIn("800원", performance)
         self.assertNotIn("40원", performance)
 
+    def test_dashboard_lists_ten_latest_closed_trades_without_amounts(self):
+        class Feed:
+            def is_healthy(self):
+                return True, ""
+        trades = [{
+            "timestamp": f"2026-11-{day:02d} 14:00:00", "type": "SELL",
+            "name": f"종목{day}", "code": f"{day:06d}",
+            "strategy": "RSI 반등", "entry_date": "2026-11-01",
+            "days_held": 3, "net_return_pct": 1.25,
+            "reason": "고점 추적", "shares": 99,
+            "entry_price": 10000, "exit_price": 10125,
+            "net_profit_krw": 12345,
+        } for day in range(1, 12)]
+        markdown = render_dashboard(
+            "running", "정규장 운영 시간 외", {}, Feed(), [],
+            context={"all_trades": trades},
+        )
+        closed = markdown.split("## 최근 청산 내역", 1)[1].split("## ", 1)[0]
+        self.assertIn("| 진입일 | 청산일 | 종목 | 전략 | 보유 기간 | 순수익률 | 청산 사유 |", closed)
+        self.assertIn("종목11", closed)
+        self.assertNotIn("종목1 |", closed)
+        self.assertNotIn("12,345", closed)
+        self.assertNotIn("10,000", closed)
+        self.assertNotIn("99주", closed)
+
     def test_dashboard_uses_saved_last_price_without_realtime_quote(self):
         class Feed:
             def quote(self, code):

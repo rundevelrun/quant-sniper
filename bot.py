@@ -462,13 +462,45 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f"| {f'{profit_factor:.2f}' if profit_factor is not None else '-'} "
         f"| {max_loss_streak}회 "
         f"| {f'{aggregate_cost_rate:.2f}%' if aggregate_cost_rate is not None else '-'} |",
+        "", "## 최근 청산 내역", "",
+        "| 진입일 | 청산일 | 종목 | 전략 | 보유 기간 | 순수익률 | 청산 사유 |",
+        "|---|---|---|---|---:|---:|---|",
     ]
+    recent_sells = sorted(
+        all_sells, key=lambda trade: str(trade.get("timestamp", "")), reverse=True
+    )[:10]
+    all_trades = context.get("all_trades", [])
+    for index, trade in enumerate(recent_sells):
+        exit_timestamp = str(trade.get("timestamp", ""))
+        entry_date = trade.get("entry_date")
+        if not entry_date:
+            matching_buys = [
+                item for item in all_trades
+                if item.get("type") == "BUY"
+                and item.get("code") == trade.get("code")
+                and str(item.get("timestamp", "")) <= exit_timestamp
+            ]
+            if matching_buys:
+                entry_date = str(matching_buys[-1].get("timestamp", ""))[:10]
+        holding_days = trade.get("days_held")
+        lines.append(
+            f"| {_md(str(entry_date or '-'))} "
+            f"| {_md(exit_timestamp[:10] or '-')} "
+            f"| {_md(trade.get('name') or trade.get('code') or '-')} "
+            f"| {_md(trade.get('strategy') or '-')} "
+            f"| {f'{int(holding_days)}일' if holding_days is not None else '-'} "
+            f"| {dashboard_return(trade.get('net_return_pct'), f'closed-{index}', context)} "
+            f"| {_md(trade.get('reason') or '-')} |"
+        )
+    if not recent_sells:
+        lines.append("| - | - | 청산 기록 없음 | - | - | - | - |")
     lines = order_dashboard_sections(lines, [
         "현재 상태",
         "전략별 현재 판단",
         "현재 보유 포지션",
         "계좌 안전장치",
         "전체 성과",
+        "최근 청산 내역",
         "유력 감시 종목",
         "최근 3일 중요 이벤트",
     ])
@@ -1717,6 +1749,8 @@ def run_trading_loop():
                         "net_profit_krw": round(net_profit_krw, 0),
                         "reason": exit_reason,
                         "strategy": pos.get("strategy"),
+                        "entry_date": pos.get("entry_date"),
+                        "days_held": int(pos.get("days_held", 0)),
                     }
                     trades.append(trade_record)
                     record_dashboard_event(
