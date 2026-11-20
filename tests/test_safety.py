@@ -18,7 +18,8 @@ from bot import (
     etf_rotation_regime, etf_rotation_traded_today,
     estimate_external_cash_flow, sector_limit_reached, time_stop_reason,
     screening_preferred_max_price,
-    restore_position_last_prices, update_dashboard_events, update_position_stop,
+    restore_daily_account_metrics, restore_position_last_prices,
+    update_dashboard_events, update_position_stop,
     render_dashboard, return_pct_svg,
 )
 from kiwoom_api import (
@@ -452,6 +453,30 @@ class SafetyTests(unittest.TestCase):
             "positions": {"000001": {"shares": 1, "current_price": 50000}},
         }
         self.assertEqual(estimate_external_cash_flow(previous, after_buy), 0)
+
+    def test_daily_return_is_restored_after_market_close_restart(self):
+        class Api:
+            def get_account_snapshot(self):
+                return {"ok": True, "total_assets": 303000,
+                        "positions": {"000001": {
+                            "shares": 1, "current_price": 13000,
+                        }}}
+        risk_state = {
+            "date": "2026-11-20", "opening_assets": 300000,
+            "peak_assets": 303000,
+            "account_baseline": {
+                "total_assets": 300000,
+                "positions": {"000001": {
+                    "shares": 1, "current_price": 10000,
+                }},
+            },
+        }
+        metrics, changed = restore_daily_account_metrics(
+            Api(), risk_state, "2026-11-20"
+        )
+        self.assertTrue(changed)
+        self.assertAlmostEqual(metrics["daily_return_pct"], 1.0)
+        self.assertEqual(risk_state["daily_return_pct"], 1.0)
 
     def test_profitable_position_gets_extended_time_stop(self):
         losing = {"buy_price": 10000, "days_held": 7, "trailing_active": False}

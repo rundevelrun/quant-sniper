@@ -757,6 +757,55 @@ def estimate_external_cash_flow(previous_snapshot, account):
     noise_threshold = max(1000.0, previous_assets * 0.005)
     return unexplained_change if abs(unexplained_change) >= noise_threshold else 0.0
 
+def restore_daily_account_metrics(api, risk_state, today_str):
+    """장 마감 후 오늘 수익률을 저장값에서 읽거나 키움 계좌로 한 번 복원한다."""
+    if risk_state.get("date") != today_str:
+        return {}, False
+    opening_assets = float(risk_state.get("opening_assets") or 0)
+    if opening_assets <= 0:
+        return {}, False
+    saved_return = risk_state.get("daily_return_pct")
+    saved_drawdown = risk_state.get("account_drawdown_pct")
+    if saved_return is not None and saved_drawdown is not None:
+        return {
+            "daily_return_pct": float(saved_return),
+            "account_drawdown_pct": float(saved_drawdown),
+            "entry_size_multiplier": float(
+                risk_state.get("entry_size_multiplier", 1.0)
+            ),
+        }, False
+
+    account = api.get_account_snapshot()
+    if not account.get("ok"):
+        return {}, False
+    current_assets = float(account.get("total_assets") or opening_assets)
+    external_flow = estimate_external_cash_flow(
+        risk_state.get("account_baseline"), account
+    )
+    if external_flow:
+        opening_assets = max(0.0, opening_assets + external_flow)
+    peak_assets, drawdown, multiplier, _ = account_drawdown_controls(
+        current_assets, float(risk_state.get("peak_assets") or current_assets)
+        + external_flow
+    )
+    daily_return_pct = (
+        (current_assets - opening_assets) / opening_assets * 100
+        if opening_assets > 0 else 0.0
+    )
+    risk_state.update({
+        "opening_assets": opening_assets,
+        "peak_assets": peak_assets,
+        "account_baseline": account_snapshot_baseline(account),
+        "daily_return_pct": daily_return_pct,
+        "account_drawdown_pct": drawdown * 100,
+        "entry_size_multiplier": multiplier,
+    })
+    return {
+        "daily_return_pct": daily_return_pct,
+        "account_drawdown_pct": drawdown * 100,
+        "entry_size_multiplier": multiplier,
+    }, True
+
 def time_stop_reason(pos, current_price):
     """손실·정체 포지션은 7일, 수익 포지션은 14일까지 두고 추적 활성 시 면제한다."""
     if pos.get("trailing_active"):
@@ -1234,6 +1283,16 @@ def run_trading_loop():
                 if restore_position_last_prices(api, closed_positions, today_str):
                     save_json(POSITIONS_FILE, closed_positions)
                     dashboard_dirty = True
+                closed_risk_state = load_json(RISK_FILE, {})
+                restored_metrics, risk_changed = restore_daily_account_metrics(
+                    api, closed_risk_state, today_str
+                )
+                if restored_metrics:
+                    dashboard_context.update(restored_metrics)
+                if risk_changed:
+                    save_json(RISK_FILE, closed_risk_state)
+                    dashboard_context["last_account_sync"] = now_str
+                    dashboard_dirty = True
                 realtime_connected, _ = realtime.is_healthy()
                 startup_wait_done = time.time() - dashboard_started_at >= 60
                 should_publish = (
@@ -1325,11 +1384,16 @@ def run_trading_loop():
                     risk_reasons.append(
                         f"계좌 낙폭 감속 적용: -{account_drawdown*100:.2f}% (주문 50%)"
                     )
-                save_json(RISK_FILE, risk_state)
                 daily_return = (
                     (current_assets - opening_assets) / opening_assets
                     if opening_assets > 0 else 0.0
                 )
+                risk_state.update({
+                    "daily_return_pct": daily_return * 100,
+                    "account_drawdown_pct": account_drawdown * 100,
+                    "entry_size_multiplier": entry_size_multiplier,
+                })
+                save_json(RISK_FILE, risk_state)
                 dashboard_context.update({
                     "account_drawdown_pct": account_drawdown * 100,
                     "daily_return_pct": daily_return * 100,
