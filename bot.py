@@ -316,7 +316,9 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     if positions:
         for name, pos in positions.items():
             quote = realtime.quote(pos.get("code", ""))
-            current = float(quote.get("price", 0)) if quote else 0
+            current = float(
+                quote.get("price", 0) if quote else pos.get("last_price", 0)
+            )
             buy = float(pos.get("buy_price", 0))
             return_pct = ((current - buy) / buy * 100) if current and buy else None
             strategy = pos.get("strategy", "-")
@@ -486,7 +488,9 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
     state_positions = []
     for name, pos in positions.items():
         quote = realtime.quote(pos.get("code", ""))
-        current_price = float(quote.get("price", 0)) if quote else None
+        current_price = float(
+            quote.get("price", 0) if quote else pos.get("last_price", 0)
+        ) or None
         buy_price = float(pos.get("buy_price", 0))
         state_positions.append({
             "name": name,
@@ -660,6 +664,24 @@ def update_position_stop(pos, current_price):
     else:
         reason = f"동적 손절 (-{stop_loss_pct*100:.1f}% ATR 보정)"
     return stop_price, reason
+
+def restore_position_last_prices(api, positions, today_str):
+    """재기동 후 실시간 캐시가 없으면 키움 일봉의 최근 종가를 복원한다."""
+    changed = False
+    for pos in positions.values():
+        if float(pos.get("last_price") or 0) > 0:
+            continue
+        candles = api.get_daily_candles(pos.get("code", ""), 2)
+        if not candles:
+            continue
+        latest = candles[-1]
+        close = float(latest.get("close") or 0)
+        if close <= 0:
+            continue
+        pos["last_price"] = close
+        pos["last_price_at"] = latest.get("date") or today_str.replace("-", "")
+        changed = True
+    return changed
 
 def get_kiwoom_candles(api, realtime, cache, code, now, count=70):
     """일봉은 일 1회 REST로 받고 당일 봉만 키움 실시간 체결로 갱신한다."""
@@ -1208,6 +1230,10 @@ def run_trading_loop():
             # 장 운영 시간 확인
             if not CURRENT_MARKET_OPEN:
                 print(f"[{now_str}] 정규장 운영 시간 외입니다. 대기 중...")
+                closed_positions = load_json(POSITIONS_FILE, {})
+                if restore_position_last_prices(api, closed_positions, today_str):
+                    save_json(POSITIONS_FILE, closed_positions)
+                    dashboard_dirty = True
                 realtime_connected, _ = realtime.is_healthy()
                 startup_wait_done = time.time() - dashboard_started_at >= 60
                 should_publish = (
@@ -1217,7 +1243,7 @@ def run_trading_loop():
                 if should_publish:
                     if sync_dashboard_to_branch(
                         "running", "정규장 운영 시간 외",
-                        load_json(POSITIONS_FILE, {}), realtime, dashboard_context,
+                        closed_positions, realtime, dashboard_context,
                     ):
                         dashboard_dirty = False
                         last_dashboard_push_time = time.time()
@@ -1530,6 +1556,8 @@ def run_trading_loop():
                 trading_days_held(pos, today_str)
                 buy_p = float(pos["buy_price"])
                 curr_p = quote["price"]
+                pos["last_price"] = curr_p
+                pos["last_price_at"] = now_str
                 exit_price = None
                 exit_reason = None
                 mim_exit_hour, mim_exit_minute = map(int, MIM_EXIT_TIME.split(":"))

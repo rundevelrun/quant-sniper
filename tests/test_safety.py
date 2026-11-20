@@ -18,7 +18,7 @@ from bot import (
     etf_rotation_regime, etf_rotation_traded_today,
     estimate_external_cash_flow, sector_limit_reached, time_stop_reason,
     screening_preferred_max_price,
-    update_dashboard_events, update_position_stop,
+    restore_position_last_prices, update_dashboard_events, update_position_stop,
     render_dashboard, return_pct_svg,
 )
 from kiwoom_api import (
@@ -270,6 +270,31 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("0.20%", performance)
         self.assertNotIn("800원", performance)
         self.assertNotIn("40원", performance)
+
+    def test_dashboard_uses_saved_last_price_without_realtime_quote(self):
+        class Feed:
+            def quote(self, code):
+                return None
+            def is_healthy(self):
+                return True, ""
+        markdown = render_dashboard(
+            "running", "정규장 운영 시간 외",
+            {"보유주": {"code": "000001", "shares": 1,
+                      "buy_price": 10000, "last_price": 10100,
+                      "days_held": 1, "strategy": "RSI 과매도 반등"}},
+            Feed(), [],
+        )
+        self.assertIn("+1.00%", markdown)
+
+    def test_missing_last_price_is_restored_from_latest_daily_close(self):
+        class Api:
+            def get_daily_candles(self, code, count):
+                return [{"date": "20261120", "close": 10100}]
+        positions = {"보유주": {"code": "000001", "buy_price": 10000}}
+        self.assertTrue(restore_position_last_prices(
+            Api(), positions, "2026-11-20"
+        ))
+        self.assertEqual(positions["보유주"]["last_price"], 10100)
 
     def test_dashboard_lists_top_monitored_symbols_without_sensitive_prices(self):
         class Feed:
