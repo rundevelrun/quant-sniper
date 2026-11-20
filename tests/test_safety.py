@@ -186,11 +186,14 @@ class SafetyTests(unittest.TestCase):
         )
         self.assertIn("후보주", markdown)
         self.assertIn("+3.00%", markdown)
-        self.assertIn("실시간 현재 상태 — 기간 제한 없음", markdown)
-        self.assertIn("최근 3일 활동", markdown)
-        self.assertIn("전체 누적 성과 — 전체 거래 이력", markdown)
+        self.assertIn("## 현재 상태", markdown)
+        self.assertIn("## 현재 보유 포지션", markdown)
+        self.assertIn("## 최근 3일 중요 이벤트", markdown)
+        self.assertIn("## 전체 성과", markdown)
         self.assertNotIn("계좌번호", markdown)
-        self.assertIn("| 시스템 상태 | 장 운영 |", markdown)
+        self.assertNotIn("10,000", markdown)
+        self.assertNotIn("| 2 |", markdown)
+        self.assertIn("| 시스템 | 장 운영 |", markdown)
         self.assertIn("🟢 정상", markdown)
 
     def test_dashboard_status_uses_traffic_light_icons(self):
@@ -212,14 +215,14 @@ class SafetyTests(unittest.TestCase):
                 "cost_fee_krw": 40,
             }]},
         )
-        performance = markdown.split("## 3. 전체 누적 성과", 1)[1]
+        performance = markdown.split("## 전체 성과", 1)[1]
         self.assertIn("거래가중 순수익률", performance)
         self.assertIn("+4.00%", performance)
         self.assertIn("0.20%", performance)
         self.assertNotIn("800원", performance)
         self.assertNotIn("40원", performance)
 
-    def test_dashboard_lists_monitored_symbols_with_codes(self):
+    def test_dashboard_lists_top_monitored_symbols_without_sensitive_prices(self):
         class Feed:
             def quote(self, code):
                 return None
@@ -240,9 +243,10 @@ class SafetyTests(unittest.TestCase):
                 ],
             },
         )
-        self.assertIn("감시 종목 전체", markdown)
-        self.assertIn("| 후보주 | `000001` |", markdown)
-        self.assertIn("| 감시주 | `000002` |", markdown)
+        self.assertIn("유력 감시 종목", markdown)
+        self.assertIn("| 후보주 | 미분류 |", markdown)
+        self.assertIn("| 감시주 | 미분류 |", markdown)
+        self.assertNotIn("000001", markdown)
         self.assertIn("🟢 상승 국면", markdown)
         self.assertIn("🟢 RSI 과매도 반등 (2/3)", markdown)
         self.assertIn("🔴 신호 없음", markdown)
@@ -493,8 +497,7 @@ class SafetyTests(unittest.TestCase):
                     "entry_attempted": False,
                 }},
             )
-        self.assertIn("KODEX200 장마감 30분 모멘텀 파일럿", markdown)
-        self.assertIn("| 완료 | 발생 | 아니오 |", markdown)
+        self.assertIn("| 장마감 모멘텀 | 진입 신호 | KODEX 200 |", markdown)
 
     def test_market_open_requires_krx_trading_day(self):
         import datetime

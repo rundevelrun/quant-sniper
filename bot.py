@@ -220,70 +220,89 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             if context.get("market_favorable")
             else "🔴 비우호 국면 — 강한 RSI 50%·예외 VBO 15%"
         )
+    rotation = context.get("etf_rotation", {})
+    regime_label = {
+        "long": "KODEX 200",
+        "inverse": "KODEX 인버스",
+        "cash": "현금",
+    }.get(rotation.get("regime"), "계산 대기")
     lines = [
         "# Quant Sniper Dashboard", "",
         f"> 마지막 갱신: **{now.strftime('%Y-%m-%d %H:%M:%S')} KST**", "",
-        "## 1. 실시간 현재 상태 — 기간 제한 없음", "",
-        "| 시스템 상태 | 장 운영 | 상세 | 보유 종목 |",
-        "|---|---:|---|---:|",
+        "## 현재 상태", "",
+        "| 시스템 | 장 운영 | 시장 국면 | 신규 매수 | 보유 포지션 |",
+        "|---|---|---|---|---:|",
         f"| {dashboard_status_label(status)} "
         f"| {'🟢 OPEN' if CURRENT_MARKET_OPEN else '🔴 CLOSED'} "
-        f"| {_md(detail)} | {len(positions)} |",
-        "", "### 시스템 신선도", "",
-        "| 키움 WebSocket | 마지막 실시간 시세 | 마지막 계좌 조회 | 마지막 정상 루프 | 실행 커밋 |",
-        "|---|---|---|---|---|",
-        f"| {'정상' if realtime_ok else '연결 대기'} | {_md(context.get('last_quote_at', '-'))} "
-        f"| {_md(context.get('last_account_sync', '-'))} | {_md(context.get('last_loop_at', '-'))} "
-        f"| `{_md(commit_hash)}` |",
+        f"| {regime_label} "
+        f"| {'가능' if context.get('entry_allowed', False) else '중단'} "
+        f"| {len(positions)} |",
+        "",
+        f"> {_md(detail)} · 키움 실시간 {'정상' if realtime_ok else '연결 대기'}"
+        f" · 마지막 계좌 확인 {_md(context.get('last_account_sync', '-'))}",
+        "", "## 현재 보유 포지션", "",
+        "| 종목 | 전략 | 수익률 | 보유 기간 | 현재 보호 | 청산 계획 |",
+        "|---|---|---:|---:|---|---|",
     ]
     if not realtime_ok and realtime_error:
         lines += ["", f"> WebSocket 상태: {_md(realtime_error)}"]
+    if positions:
+        for name, pos in positions.items():
+            quote = realtime.quote(pos.get("code", ""))
+            current = float(quote.get("price", 0)) if quote else 0
+            buy = float(pos.get("buy_price", 0))
+            return_pct = ((current - buy) / buy * 100) if current and buy else None
+            strategy = pos.get("strategy", "-")
+            if strategy == ETF_ROTATION_STRATEGY:
+                exit_plan = (
+                    f"국면 전환 또는 -{float(pos.get('stop_loss_pct', ETF_ROTATION_STOP_LOSS_PCT))*100:.1f}% 손절"
+                    " · +4% 보호 · +8% 고점 추적"
+                )
+            elif strategy == MIM_STRATEGY:
+                exit_plan = f"-{MIM_STOP_LOSS_PCT*100:.1f}% 손절 또는 {MIM_EXIT_TIME} 청산"
+            else:
+                exit_plan = "ATR 손절 · +4% 보호 · +8% 고점 추적 · 타임스탑"
+            protection = (
+                "고점 추적 ON" if pos.get("trailing_active")
+                else "수익 보호 ON" if pos.get("trailing_stop_price")
+                else "초기 손절"
+            )
+            lines.append(
+                f"| {_md(name)} | {_md(strategy)} "
+                f"| {f'{return_pct:+.2f}%' if return_pct is not None else '-'} "
+                f"| {int(pos.get('days_held', 0))}일 | {protection} | {exit_plan} |"
+            )
+    else:
+        lines.append("| 보유 종목 없음 | - | - | - | - | - |")
 
     mim_state = context.get("mim_state", {})
-    if MIM_ENABLED:
-        lines += [
-            "", "### KODEX200 장마감 30분 모멘텀 파일럿", "",
-            "| 기준값 수집 | 진입 신호 | 오늘 주문 시도 | 운용 규칙 |",
-            "|---|---|---|---|",
-            f"| {'완료' if mim_state.get('ready') else '수집 중'} "
-            f"| {'발생' if mim_state.get('long_signal') else '없음'} "
-            f"| {'예' if mim_state.get('entry_attempted') else '아니오'} "
-            f"| 15:00–15:05 최대 {MIM_MAX_SHARES}주 · -{MIM_STOP_LOSS_PCT*100:.1f}% 손절 · {MIM_EXIT_TIME} 당일 청산 |",
-        ]
-
-    rotation = context.get("etf_rotation", {})
+    lines += [
+        "", "## 전략별 현재 판단", "",
+        "| 전략 | 상태 | 대상 | 판단 근거 |",
+        "|---|---|---|---|",
+    ]
     if ETF_ROTATION_ENABLED:
-        regime_label = {
-            "long": "KODEX 200",
-            "inverse": "KODEX 인버스",
-            "cash": "현금",
-        }.get(rotation.get("regime"), "계산 대기")
-        previous_close = rotation.get("previous_close")
-        moving_average = rotation.get("ma")
-        lines += [
-            "", "### 시장 ETF 3상태 추세전환", "",
-            "| 현재 선택 | 전일 종가 | 60일선 | 배정 상한 | 판단 기준 |",
-            "|---|---:|---:|---:|---|",
-            f"| {regime_label} "
-            f"| {f'{float(previous_close):,.0f}' if previous_close else '-'} "
-            f"| {f'{float(moving_average):,.0f}' if moving_average else '-'} "
-            f"| {ETF_ROTATION_ALLOC_PCT*100:.0f}% "
-            "| 전일 종가가 60일선 ±1% 밖이고 5거래일 기울기가 같은 방향 |",
-        ]
+        lines.append(
+            f"| ETF 추세전환 | {'보유/감시' if rotation.get('regime') != 'cash' else '현금 대기'} "
+            f"| {regime_label} | 전일 종가·60일선 ±1%·5거래일 기울기 |"
+        )
+    lines += [
+        f"| RSI 반등 | {'신호 확인 중' if int(context.get('confirming_signal_count', 0)) else '대기'} "
+        f"| 감시 유니버스 | {market_label} |",
+        f"| VBO 돌파 | {'확정 신호 있음' if int(context.get('confirmed_signal_count', 0)) else '대기'} "
+        "| 감시 유니버스 | 가격 돌파와 거래량 확인 |",
+    ]
+    if MIM_ENABLED:
+        lines.append(
+            f"| 장마감 모멘텀 | {'진입 신호' if mim_state.get('long_signal') else '수집/대기'} "
+            f"| KODEX 200 | {MIM_EXIT_TIME} 당일 청산 |"
+        )
 
     lines += [
-        "", "### 오늘의 감시 및 신호", "",
-        f"> 시장 국면: **{market_label}**  ",
-        "> 우호장: RSI·VBO 정상 크기 · 비우호장: 강한 RSI 50%, 강한 예외 VBO 15%·1종목",
-        "",
-        "| 유니버스 기준일 | 데이터 출처 | 감시 종목 | 원신호 | 연속 확인 중 | 확정 신호 |",
-        "|---|---|---:|---:|---:|---:|",
-        f"| {_md(context.get('universe_date', '-'))} | {_md(context.get('universe_source', '-'))} "
-        f"| {int(context.get('universe_count', 0))} | {int(context.get('raw_signal_count', 0))} "
-        f"| {int(context.get('confirming_signal_count', 0))} | {int(context.get('confirmed_signal_count', 0))} |",
-        "", "#### 감시 종목 전체", "",
-        "| 종목 | 코드 | 시장 | 업종 | 현재가 | 우호장 최대 수량 | 비우호장 최대 수량 | 현재 자금 조건 | 직전 RSI | 현재 RSI | 진입 차단 사유 | 매수 신호 |",
-        "|---|---:|---|---|---:|---:|---:|---|---:|---:|---|---|",
+        "", "## 유력 감시 종목", "",
+        f"> 전체 {int(context.get('universe_count', 0))}개 중 신호 우선·RSI 오름차순 최대 10개", "",
+        "| 종목 | 시장 | 직전 RSI | 현재 RSI | 신호 | 현재 판단 |",
+        "|---|---|---:|---:|---|---|",
     ]
     universe_symbols = context.get("tradeability") or context.get("universe_symbols", [])
     signal_statuses = {
@@ -293,29 +312,16 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         item.get("name"): item for item in context.get("signal_diagnostics", [])
     }
     if universe_symbols:
-        for item in universe_symbols:
-            price = item.get("price")
-            max_shares = item.get("max_shares")
-            favorable_shares = item.get("favorable_max_shares", max_shares)
-            unfavorable_shares = item.get("unfavorable_max_shares", max_shares)
-            eligibility = (
-                (
-                    "가능 (비우호장 50%)"
-                    if item.get("eligible") and float(item.get("market_size_multiplier", 1.0)) < 1
-                    else "가능"
-                    if item.get("eligible")
-                    else _md(item.get("reason", "불가"))
-                )
-                if "eligible" in item else "계산 대기"
-            )
+        ranked = sorted(universe_symbols, key=lambda item: (
+            0 if signal_statuses.get(item.get("name"), {}).get("active") else 1,
+            float(signal_diagnostics.get(item.get("name"), {}).get("previous_rsi") or 999),
+        ))[:10]
+        for item in ranked:
             signal = signal_statuses.get(item.get("name"), {})
             diagnostic = signal_diagnostics.get(item.get("name"), {})
             previous_rsi = diagnostic.get("previous_rsi")
             current_rsi = diagnostic.get("rsi")
-            blockers = (
-                f"RSI: {_md(diagnostic.get('rsi_blocker', '계산 대기'))} · "
-                f"VBO: {_md(diagnostic.get('vbo_blocker', '계산 대기'))}"
-            )
+            blockers = diagnostic.get("rsi_blocker") or diagnostic.get("vbo_blocker") or "계산 대기"
             signal_text = (
                 f"🟢 {_md(signal.get('strategy'))}"
                 f"{' · 비우호장 15%' if signal.get('strategy') == '비우호장 강한 VBO (15%)' else ' · 비우호장 50%' if float(signal.get('size_multiplier', 1.0)) < 1 else ''} "
@@ -323,23 +329,17 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 if signal.get("active") else "🔴 신호 없음"
             )
             lines.append(
-                f"| {_md(item.get('name'))} | `{_md(item.get('code'))}` "
-                f"| {_md(item.get('market', '미분류'))} "
-                f"| {_md(item.get('sector', '미분류'))} "
-                f"| {f'{float(price):,.0f}원' if price else '-'} "
-                f"| {int(favorable_shares) if favorable_shares is not None else '-'} "
-                f"| {int(unfavorable_shares) if unfavorable_shares is not None else '-'} "
-                f"| {eligibility} "
+                f"| {_md(item.get('name'))} | {_md(item.get('market', '미분류'))} "
                 f"| {f'{float(previous_rsi):.1f}' if previous_rsi is not None else '-'} "
                 f"| {f'{float(current_rsi):.1f}' if current_rsi is not None else '-'} "
-                f"| {blockers} | {signal_text} |"
+                f"| {signal_text} | {_md(blockers)} |"
             )
     else:
-        lines.append("| - | - | - | - | - | - | - | - | - | - | - | - |")
+        lines.append("| 감시 종목 없음 | - | - | - | - | - |")
     drawdown = context.get("account_drawdown_pct")
     daily_return = context.get("daily_return_pct")
     lines += [
-        "", "### 위험 관리 현황", "",
+        "", "## 위험 관리", "",
         "| 신규 매수 | 계좌 고점 대비 낙폭 | 오늘 수익률 | 주문 배율 | 거래당 위험 | 종목당 한도 | 남은 슬롯 |",
         "|---|---:|---:|---:|---:|---:|---:|",
         f"| {'가능' if context.get('entry_allowed', False) else '중단'} "
@@ -347,64 +347,24 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f"| {f'{daily_return:+.2f}%' if daily_return is not None else '-'} "
         f"| {float(context.get('entry_size_multiplier', 1.0))*100:.0f}% "
         f"| 0.7% | {MAX_ALLOC_PER_STOCK*100:.0f}% | {max(0, MAX_POSITIONS-len(positions))} |",
-        "", "### 현재 보유 포지션 및 청산 계획 — 전체", "",
-        "| 종목 | 수량 | 매수가 | 현재가 | 수익률 | 최초 손절 | 현재 보호선 | 최고가 대비 | 타임스탑 | 추적 |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
-    if positions:
-        for name, pos in positions.items():
-            quote = realtime.quote(pos.get("code", ""))
-            current = float(quote.get("price", 0)) if quote else 0
-            buy = float(pos.get("buy_price", 0))
-            return_pct = ((current - buy) / buy * 100) if current and buy else None
-            return_text = f"{return_pct:+.2f}%" if return_pct is not None else "-"
-            stop_loss_pct = float(pos.get("stop_loss_pct", STOP_LOSS_PCT))
-            initial_stop = buy * (1 - stop_loss_pct)
-            current_stop = float(pos.get("trailing_stop_price", initial_stop))
-            highest = float(pos.get("highest_price", buy))
-            off_high = ((current - highest) / highest * 100) if current and highest else None
-            if pos.get("trailing_active"):
-                time_stop_text = "추적 중"
-            elif current > buy:
-                time_stop_text = f"{max(0, MAX_PROFIT_HOLD_DAYS-int(pos.get('days_held', 0)))}일"
-            else:
-                time_stop_text = f"{max(0, MAX_HOLD_DAYS-int(pos.get('days_held', 0)))}일"
-            lines.append(
-                f"| {_md(name)} | {int(pos.get('shares', 0))} | {buy:,.0f} | {current:,.0f} "
-                f"| {return_text} | {initial_stop:,.0f} | {current_stop:,.0f} "
-                f"| {f'{off_high:+.2f}%' if off_high is not None else '-'} "
-                f"| {time_stop_text} | {'ON' if pos.get('trailing_active') else 'OFF'} |"
-            )
-    else:
-        lines.append("| 보유 종목 없음 | - | - | - | - | - | - | - | - | - |")
-
     lines += [
-        "", "## 2. 최근 3일 활동", "",
-        "| 매수 | 매도 | 스킵 | 위험 | 오류 |",
-        "|---:|---:|---:|---:|---:|",
-        f"| {counts['BUY']} | {counts['SELL']} | {counts['SKIP']} | {counts['RISK']} | {counts['ERROR']} |",
-        "", "### 최근 3일 청산 성과", "",
-        "| 청산 거래 | 승률 | 평균 순수익률 |",
-        "|---:|---:|---:|",
-        f"| {len(returns)} | {f'{win_rate:.1f}%' if win_rate is not None else '-'} "
-        f"| {f'{avg_return:+.2f}%' if avg_return is not None else '-'} |",
-        "", "### 최근 3일 이벤트", "",
-        "| 시각 | 유형 | 종목 | 수량 | 가격 | 사유 | 반복 |",
-        "|---|---|---|---:|---:|---|---:|",
+        "", "## 최근 3일 중요 이벤트", "",
+        "| 시각 | 유형 | 종목 | 사유 | 반복 |",
+        "|---|---|---|---|---:|",
     ]
-    visible_types = {"BUY", "SELL", "SKIP", "RISK", "ERROR"}
+    visible_types = {"BUY", "SELL", "RISK", "ERROR"}
     visible = [e for e in recent_events if e.get("type") in visible_types]
-    for event in reversed(visible[-100:]):
+    for event in reversed(visible[-20:]):
         lines.append(
             f"| {_md(event.get('timestamp', '')).replace('T', ' ')} | {_md(event.get('type'))} "
             f"| {_md(event.get('name') or event.get('code') or '-')} "
-            f"| {_md(event.get('shares', '-'))} | {_md(event.get('price', '-'))} "
             f"| {_md(event.get('reason', '-'))} | {int(event.get('count', 1))} |"
         )
     if not visible:
-        lines.append("| - | - | 기록 없음 | - | - | - | - |")
+        lines.append("| - | - | 기록 없음 | - | - |")
     lines += [
-        "", "## 3. 전체 누적 성과 — 전체 거래 이력", "",
+        "", "## 전체 성과", "",
         "| 청산 거래 | 승률 | 거래가중 순수익률 | 평균 이익률 | 평균 손실률 | Profit Factor | 최대 연속 손실 | 거래가중 비용률 |",
         "|---:|---:|---:|---:|---:|---:|---:|---:|",
         f"| {len(all_returns)} "
@@ -416,7 +376,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f"| {max_loss_streak}회 "
         f"| {f'{aggregate_cost_rate:.2f}%' if aggregate_cost_rate is not None else '-'} |",
     ]
-    lines += ["", "> 인증정보와 민감한 계좌정보는 기록하지 않습니다.", ""]
+    lines += ["", "> 수량·가격·원화 손익 등 민감한 계좌정보는 공개하지 않습니다.", ""]
     return "\n".join(lines)
 
 def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
