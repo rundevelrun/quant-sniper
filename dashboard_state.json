@@ -1,0 +1,171 @@
+{
+  "timestamp": "2026-11-22 00:00:29",
+  "status": "running",
+  "detail": "정규장 운영 시간 외",
+  "is_market_open": false,
+  "position_count": 1,
+  "positions": [
+    {
+      "name": "KODEX 인버스 추세",
+      "code": "114800",
+      "shares": 64,
+      "buy_price": 1365.0,
+      "current_price": 1382.0,
+      "return_pct": 1.25,
+      "trailing_active": false,
+      "days_held": 1
+    }
+  ],
+  "websocket_connected": true,
+  "websocket_error": "",
+  "last_quote_at": null,
+  "last_account_sync": null,
+  "last_loop_at": null,
+  "running_commit": "6b1a4b0",
+  "entry_allowed": false,
+  "account_drawdown_pct": 0.2226023607233312,
+  "daily_return_pct": 0.33960068301710405,
+  "entry_size_multiplier": 1.0,
+  "last_external_flow": null,
+  "universe_date": "2026-11-20",
+  "universe_source": "kiwoom_previous_day_rsi_vbo_mixed",
+  "universe_count": 21,
+  "universe_symbols": [
+    {
+      "name": "제주항공",
+      "code": "089590",
+      "market": "KOSPI",
+      "sector": "운송/창고"
+    },
+    {
+      "name": "파라다이스",
+      "code": "034230",
+      "market": "KOSPI",
+      "sector": "오락/문화"
+    },
+    {
+      "name": "와이씨",
+      "code": "232140",
+      "market": "KOSDAQ",
+      "sector": "기계/장비"
+    },
+    {
+      "name": "루닛",
+      "code": "328130",
+      "market": "KOSDAQ",
+      "sector": "IT 서비스"
+    },
+    {
+      "name": "SFA반도체",
+      "code": "036540",
+      "market": "KOSDAQ",
+      "sector": "전기/전자"
+    },
+    {
+      "name": "미래에셋벤처투자",
+      "code": "100790",
+      "market": "KOSDAQ",
+      "sector": "금융"
+    },
+    {
+      "name": "롯데관광개발",
+      "code": "032350",
+      "market": "KOSPI",
+      "sector": "일반서비스"
+    },
+    {
+      "name": "강원랜드",
+      "code": "035250",
+      "market": "KOSPI",
+      "sector": "오락/문화"
+    },
+    {
+      "name": "샘씨엔에스",
+      "code": "252990",
+      "market": "KOSDAQ",
+      "sector": "전기/전자"
+    },
+    {
+      "name": "위메이드",
+      "code": "112040",
+      "market": "KOSDAQ",
+      "sector": "IT 서비스"
+    },
+    {
+      "name": "디어유",
+      "code": "376300",
+      "market": "KOSDAQ",
+      "sector": "IT 서비스"
+    },
+    {
+      "name": "한화솔루션",
+      "code": "009830",
+      "market": "KOSPI",
+      "sector": "화학"
+    },
+    {
+      "name": "대우건설",
+      "code": "047040",
+      "market": "KOSPI",
+      "sector": "건설"
+    },
+    {
+      "name": "하나마이크론",
+      "code": "067310",
+      "market": "KOSDAQ",
+      "sector": "전기/전자"
+    },
+    {
+      "name": "스피어",
+      "code": "347700",
+      "market": "KOSDAQ",
+      "sector": "IT 서비스"
+    },
+    {
+      "name": "네오셈",
+      "code": "253590",
+      "market": "KOSDAQ",
+      "sector": "기계/장비"
+    },
+    {
+      "name": "고영",
+      "code": "098460",
+      "market": "KOSDAQ",
+      "sector": "기계/장비"
+    },
+    {
+      "name": "서부T&D",
+      "code": "006730",
+      "market": "KOSDAQ",
+      "sector": "일반서비스"
+    },
+    {
+      "name": "실리콘투",
+      "code": "257720",
+      "market": "KOSDAQ",
+      "sector": "유통"
+    },
+    {
+      "name": "대한전선",
+      "code": "001440",
+      "market": "KOSPI",
+      "sector": "전기/전자"
+    },
+    {
+      "name": "LG디스플레이",
+      "code": "034220",
+      "market": "KOSPI",
+      "sector": "전기/전자"
+    }
+  ],
+  "tradeability": [],
+  "market_favorable": false,
+  "market_regimes": {},
+  "signal_statuses": [],
+  "signal_diagnostics": [],
+  "raw_signal_count": 0,
+  "confirming_signal_count": 0,
+  "confirmed_signal_count": 0,
+  "mim_state": {},
+  "etf_rotation": {}
+}
