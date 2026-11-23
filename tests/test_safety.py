@@ -8,6 +8,7 @@ from unittest.mock import patch
 import config
 from bot import (
     account_drawdown_controls, account_snapshot_baseline, build_tradeability,
+    build_etf_tradeability,
     calculate_entry_shares,
     entry_cash_after_reserve,
     build_operational_status, confirm_persistent_signals, dashboard_status_label,
@@ -440,6 +441,24 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(result[0]["unfavorable_max_shares"], 1)
         self.assertEqual(result[1]["max_shares"], 0)
         self.assertIn("비우호장 50%", result[1]["reason"])
+
+    def test_etf_tradeability_blocks_one_share_above_strategy_allocation(self):
+        result = build_etf_tradeability(
+            {"091160": "KODEX 반도체"}, "섹터 ETF", 0.15, 0.025,
+            300000, 300000, {"091160": {"price": 84600}},
+        )
+        self.assertFalse(result[0]["eligible"])
+        self.assertEqual(result[0]["max_shares"], 0)
+        self.assertIn("배정 한도 15%", result[0]["reason"])
+
+    def test_etf_tradeability_matches_allocation_risk_and_cash_limits(self):
+        result = build_etf_tradeability(
+            {"069500": "KODEX 200"}, "다중자산 ETF", 0.30, 0.025,
+            300000, 300000, {"069500": {"price": 76210}},
+        )
+        self.assertTrue(result[0]["eligible"])
+        self.assertEqual(result[0]["max_shares"], 1)
+        self.assertEqual(result[0]["allocation_pct"], 30.0)
 
     def test_equity_drawdown_slows_then_halts_entries(self):
         peak, drawdown, multiplier, halted = account_drawdown_controls(920000, 1000000)
