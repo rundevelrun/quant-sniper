@@ -17,6 +17,7 @@ from bot import (
     mim_long_signal, save_json, trading_days_held, update_mim_state,
     etf_rotation_regime, etf_rotation_traded_today,
     estimate_external_cash_flow, sector_limit_reached, time_stop_reason,
+    apply_intraday_surge_limits, intraday_surge_max_price,
     screening_preferred_max_price,
     restore_daily_account_metrics, restore_position_last_prices,
     update_dashboard_events, update_position_stop,
@@ -757,6 +758,53 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(api.last_universe_metadata["후보주"]["sector"], "반도체")
         self.assertEqual(api.last_universe_metadata["후보주"]["market"], "KOSPI")
 
+    def test_intraday_surge_universe_filters_and_validates_candidates(self):
+        with patch.object(config, "LIVE_TRADING_ENABLED", True):
+            api = KiwoomRestAPI("key", "secret", "account")
+
+        def response(path, api_id, body):
+            if api_id == "ka10023":
+                return {"return_code": 0, "trde_qty_sdnin": [{
+                    "stk_cd": "000001", "stk_nm": "급증주",
+                    "cur_prc": "+10000", "flu_rt": "+4.00",
+                    "now_trde_qty": "200000", "sdnin_rt": "+150.0",
+                }]}
+            if api_id == "ka10032":
+                return {"return_code": 0, "trde_prica_upper": []}
+            return {"return_code": 0, "lastPrice": "9000",
+                    "listCount": "100000000", "marketName": "KOSPI",
+                    "upName": "제조", "auditInfo": "정상",
+                    "orderWarning": "0"}
+
+        api._post_domestic = response
+        with patch("kiwoom_api.time.sleep"):
+            selected = api.get_intraday_surge_universe(
+                8, 500_000_000_000, 5_000_000_000_000, 20000,
+            )
+        self.assertEqual(selected, {"급증주": "000001"})
+        self.assertTrue(api.last_intraday_metadata["급증주"]["intraday_surge"])
+
+    def test_intraday_surge_excludes_etf_after_stock_info_lookup(self):
+        with patch.object(config, "LIVE_TRADING_ENABLED", True):
+            api = KiwoomRestAPI("key", "secret", "account")
+
+        api._post_domestic = unittest.mock.Mock(side_effect=[
+            {"return_code": 0, "trde_qty_sdnin": [{
+                "stk_cd": "069500", "stk_nm": "KODEX 200",
+                "cur_prc": "+10000", "flu_rt": "+2.00",
+                "sdnin_rt": "+100.0",
+            }]},
+            {"return_code": 0, "trde_prica_upper": []},
+            {"return_code": 0, "lastPrice": "9000",
+             "listCount": "100000000", "marketName": "ETF",
+             "auditInfo": "정상", "orderWarning": "0"},
+        ])
+        with patch("kiwoom_api.time.sleep"):
+            selected = api.get_intraday_surge_universe(
+                8, 500_000_000_000, 5_000_000_000_000, 20000,
+            )
+        self.assertEqual(selected, {})
+
     def test_screener_excludes_candidate_account_cannot_afford(self):
         with patch.object(config, "LIVE_TRADING_ENABLED", True):
             api = KiwoomRestAPI("key", "secret", "account")
@@ -815,6 +863,16 @@ class SafetyTests(unittest.TestCase):
             "ok": True, "total_assets": 306170, "cash": 306170,
         })
         self.assertAlmostEqual(cap, 24354.431818181816)
+
+    def test_intraday_surge_is_limited_to_fifteen_percent(self):
+        account = {"ok": True, "total_assets": 300000, "cash": 300000}
+        self.assertAlmostEqual(intraday_surge_max_price(account), 22500)
+        signals = [{"name": "급증주", "strategy": "변동성 돌파 (추세)",
+                    "size_multiplier": 1.0}]
+        limited = apply_intraday_surge_limits(signals, {"급증주"})[0]
+        self.assertEqual(limited["strategy"], "당일 거래량 급증 VBO (15%)")
+        self.assertAlmostEqual(limited["max_investment_pct"], 0.15)
+        self.assertLess(limited["size_multiplier"], 0.5)
 
     def test_kiwoom_daily_candles_are_returned_oldest_first(self):
         with patch.object(config, "LIVE_TRADING_ENABLED", True):

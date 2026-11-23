@@ -97,6 +97,7 @@ class KiwoomRestAPI:
         self.token = None
         self.token_expiry = 0
         self.last_universe_metadata = {}
+        self.last_intraday_metadata = {}
         self.cash_balance_cache = None
         self.cash_balance_cache_at = 0.0
         self.cash_balance_cache_ttl = 60.0
@@ -290,6 +291,102 @@ class KiwoomRestAPI:
         selected = {name: code for name, code, _ in mixed}
         metadata = {name: meta for name, _, meta in mixed}
         self.last_universe_metadata = metadata
+        return selected
+
+    def get_intraday_surge_universe(
+        self, limit, min_market_cap, max_market_cap, preferred_max_price,
+        min_day_return=0.01, max_day_return=0.08, min_volume_rate=50.0,
+    ):
+        """당일 거래량 급증·거래대금 상위에서 안전 필터를 통과한 후보를 고른다."""
+        surge = self._post_domestic(
+            "/api/dostk/rkinfo", "ka10023",
+            {"mrkt_tp": "000", "sort_tp": "2", "tm_tp": "1",
+             "trde_qty_tp": "100", "stk_cnd": "1", "pric_tp": "0",
+             "stex_tp": "1", "tm": "30"},
+        )
+        value = self._post_domestic(
+            "/api/dostk/rkinfo", "ka10032",
+            {"mrkt_tp": "000", "mang_stk_incls": "0", "stex_tp": "1"},
+        )
+        if surge.get("return_code") != 0 or value.get("return_code") != 0:
+            print("[INTRADAY SCREENER ERR] 키움 당일 순위 조회 실패")
+            self.last_intraday_metadata = {}
+            return {}
+
+        ranked = {}
+        for rank, item in enumerate(surge.get("trde_qty_sdnin", [])):
+            if abs(_number(item.get("sdnin_rt"))) < min_volume_rate:
+                continue
+            code = str(item.get("stk_cd", "")).lstrip("AJQ")[-6:]
+            if len(code) == 6 and code.isdigit():
+                ranked[code] = (rank, item, abs(_number(item.get("sdnin_rt"))))
+        value_offset = len(ranked) + 100
+        for rank, item in enumerate(value.get("trde_prica_upper", [])):
+            code = str(item.get("stk_cd", "")).lstrip("AJQ")[-6:]
+            if len(code) == 6 and code.isdigit() and code not in ranked:
+                ranked[code] = (value_offset + rank, item, 0.0)
+
+        candidates = []
+        validation_attempts = 0
+        for code, (rank, item, surge_rate) in sorted(
+            ranked.items(), key=lambda pair: pair[1][0]
+        ):
+            name = str(item.get("stk_nm", "")).strip()
+            current_price = abs(_number(item.get("cur_prc")))
+            day_return = _number(item.get("flu_rt")) / 100.0
+            unsafe_name = (
+                name.endswith("우") or "우B" in name or "스팩" in name
+                or "ETF" in name or "ETN" in name
+            )
+            if (
+                unsafe_name or current_price <= 0
+                or not min_day_return <= day_return <= max_day_return
+                or (preferred_max_price and current_price > preferred_max_price)
+            ):
+                continue
+            # 5분마다 도는 보조 스캐너가 종목 상세 TR을 과도하게 호출하지 않게 제한한다.
+            if validation_attempts >= 20:
+                break
+            validation_attempts += 1
+            info = self._post_domestic(
+                "/api/dostk/stkinfo", "ka10100", {"stk_cd": code}
+            )
+            time.sleep(0.22)
+            if info.get("return_code") != 0:
+                continue
+            previous_close = abs(_number(info.get("lastPrice")))
+            listed_shares = abs(_number(info.get("listCount")))
+            market_cap = previous_close * listed_shares
+            audit_info = str(info.get("auditInfo", "")).strip()
+            unsafe_state = audit_info not in {"", "정상"} or str(
+                info.get("orderWarning", "0")
+            ).strip() not in {"", "0"}
+            is_exchange_traded_product = str(
+                info.get("marketName", "")
+            ).strip().upper() in {"ETF", "ETN"}
+            if (
+                unsafe_state or is_exchange_traded_product
+                or not min_market_cap <= market_cap <= max_market_cap
+            ):
+                continue
+            candidates.append((name, code, {
+                "code": code,
+                "market": _market_name(info.get("marketName")),
+                "sector": str(info.get("upName", "")).strip() or "미분류",
+                "previous_close": previous_close,
+                "previous_market_cap": market_cap,
+                "intraday_surge": True,
+                "intraday_day_return_pct": round(day_return * 100, 2),
+                "intraday_volume_surge_pct": round(surge_rate, 2),
+                "screening_bucket": "당일 거래량 급증",
+            }))
+            if len(candidates) >= limit:
+                break
+
+        selected = {name: code for name, code, _ in candidates}
+        self.last_intraday_metadata = {
+            name: meta for name, _, meta in candidates
+        }
         return selected
 
     def get_account_snapshot(self):

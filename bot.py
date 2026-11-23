@@ -30,7 +30,11 @@ from config import (
     ETF_ROTATION_INVERSE_CODE, ETF_ROTATION_MA_PERIOD,
     ETF_ROTATION_SLOPE_DAYS, ETF_ROTATION_BAND_PCT,
     ETF_ROTATION_ALLOC_PCT, ETF_ROTATION_STOP_LOSS_PCT,
-    ETF_ROTATION_TRAILING_TRIGGER, ETF_ROTATION_TRAILING_GAP
+    ETF_ROTATION_TRAILING_TRIGGER, ETF_ROTATION_TRAILING_GAP,
+    INTRADAY_SURGE_ENABLED, INTRADAY_SURGE_SCAN_INTERVAL_SECONDS,
+    INTRADAY_SURGE_MAX_CANDIDATES, INTRADAY_SURGE_MIN_DAY_RETURN_PCT,
+    INTRADAY_SURGE_MAX_DAY_RETURN_PCT, INTRADAY_SURGE_MIN_VOLUME_RATE_PCT,
+    INTRADAY_SURGE_MAX_INVESTMENT_PCT, INTRADAY_SURGE_SIZE_MULTIPLIER
 )
 from strategy import calculate_atr, evaluate_signals, is_favorable_market
 from kiwoom_api import KiwoomRestAPI
@@ -53,6 +57,7 @@ UNIVERSE_STRATEGY_VERSION = "rsi_vbo_mixed_v5"
 MIM_STRATEGY = "KODEX200 장마감 30분 모멘텀"
 MIM_POSITION_NAME = "KODEX200 장마감 모멘텀"
 ETF_ROTATION_STRATEGY = "시장 ETF 3상태 추세전환"
+INTRADAY_SURGE_STRATEGY = "당일 거래량 급증 VBO (15%)"
 ETF_ROTATION_NAMES = {
     ETF_ROTATION_LONG_CODE: "KODEX 200 추세",
     ETF_ROTATION_INVERSE_CODE: "KODEX 인버스 추세",
@@ -373,6 +378,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f"| 감시 유니버스 | {market_label} |",
         f"| VBO 돌파 | {'확정 신호 있음' if int(context.get('confirmed_signal_count', 0)) else '대기'} "
         "| 감시 유니버스 | 가격 돌파와 거래량 확인 |",
+        f"| 당일 거래량 급증 | {'후보 감시' if int(context.get('intraday_surge_count', 0)) else '대기'} "
+        f"| {int(context.get('intraday_surge_count', 0))}종목 | 5분 순위 조회 · 계좌 15% · 동시 1종목 |",
     ]
     if MIM_ENABLED:
         lines.append(
@@ -406,7 +413,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             blockers = diagnostic.get("rsi_blocker") or diagnostic.get("vbo_blocker") or "계산 대기"
             signal_text = (
                 f"🟢 {_md(signal.get('strategy'))}"
-                f"{' · 비우호장 15%' if signal.get('strategy') == '비우호장 강한 VBO (15%)' else ' · 비우호장 50%' if float(signal.get('size_multiplier', 1.0)) < 1 else ''} "
+                f"{' · 15% 제한' if signal.get('strategy') in {'비우호장 강한 VBO (15%)', INTRADAY_SURGE_STRATEGY} else ' · 비우호장 50%' if float(signal.get('size_multiplier', 1.0)) < 1 else ''} "
                 f"({int(signal.get('count', 0))}/3)"
                 if signal.get("active") else "🔴 신호 없음"
             )
@@ -900,6 +907,43 @@ def screening_preferred_max_price(account):
     )
     return live_price_cap / (1.0 + MAX_ENTRY_DAY_RETURN_PCT)
 
+def intraday_surge_max_price(account):
+    """15% 전략이 최대 손절폭에서도 1주를 살 수 있는 실시간 가격 상한."""
+    if not account.get("ok"):
+        return None
+    total_assets = float(account.get("total_assets") or 0)
+    cash = float(account.get("cash") or 0)
+    if min(total_assets, cash) <= 0:
+        return None
+    return min(
+        cash,
+        total_assets * INTRADAY_SURGE_MAX_INVESTMENT_PCT,
+        total_assets * MAX_RISK_PER_TRADE_PCT
+        * INTRADAY_SURGE_SIZE_MULTIPLIER / MAX_STOP_LOSS_PCT,
+    )
+
+def apply_intraday_surge_limits(signals, surge_names):
+    """당일 발굴 후보의 VBO 신호만 15%·동시 1종목 전략으로 격리한다."""
+    limited = []
+    for signal in signals:
+        signal = dict(signal)
+        if (
+            signal.get("name") in surge_names
+            and signal.get("strategy") in {
+                "변동성 돌파 (추세)", "비우호장 강한 VBO (15%)"
+            }
+        ):
+            signal.update({
+                "strategy": INTRADAY_SURGE_STRATEGY,
+                "size_multiplier": min(
+                    float(signal.get("size_multiplier", 1.0)),
+                    INTRADAY_SURGE_SIZE_MULTIPLIER,
+                ),
+                "max_investment_pct": INTRADAY_SURGE_MAX_INVESTMENT_PCT,
+            })
+        limited.append(signal)
+    return limited
+
 def sector_limit_reached(candidate_sector, positions, universe_metadata,
                          max_per_sector=MAX_POSITIONS_PER_SECTOR):
     """미분류를 제외하고 동일 업종 보유 수가 상한에 도달했는지 확인한다."""
@@ -1152,6 +1196,10 @@ def run_trading_loop():
     dashboard_critical = False
     last_dashboard_push_time = 0
     dashboard_started_at = time.time()
+    last_intraday_scan_time = 0.0
+    intraday_surge_universe = {}
+    intraday_surge_metadata = {}
+    intraday_surge_names = set()
     try:
         running_commit = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"], cwd=BASE_DIR,
@@ -1162,6 +1210,7 @@ def run_trading_loop():
     dashboard_context = {
         "commit_hash": running_commit,
         "entry_size_multiplier": 1.0,
+        "intraday_surge_count": 0,
     }
     mim_state = load_json(MIM_STATE_FILE, {})
     record_dashboard_event("SYSTEM", reason="봇 프로세스 시작")
@@ -1192,8 +1241,12 @@ def run_trading_loop():
                 and universe_cache.get("strategy_version") == UNIVERSE_STRATEGY_VERSION
                 and cache_symbols
             ):
-                active_universe = universe_cache["symbols"]
-                universe_metadata = cache_metadata
+                active_universe = {
+                    **universe_cache["symbols"], **intraday_surge_universe
+                }
+                universe_metadata = {
+                    **cache_metadata, **intraday_surge_metadata
+                }
                 if cache_complete:
                     last_screened_date = today_str
             dashboard_context.update({
@@ -1371,6 +1424,11 @@ def run_trading_loop():
                 risk_reasons.append(f"계좌 조회 실패: {account.get('error', 'unknown')}")
                 print(f"[{now_str}] [RISK] 계좌 조회 실패로 이번 루프의 신규 주문을 중단합니다.")
             elif risk_date != today_str:
+                if risk_date is not None:
+                    intraday_surge_universe = {}
+                    intraday_surge_metadata = {}
+                    intraday_surge_names = set()
+                    last_intraday_scan_time = 0.0
                 risk_date = today_str
                 if risk_state.get("date") == today_str:
                     opening_assets = risk_state.get("opening_assets") or None
@@ -1465,6 +1523,60 @@ def run_trading_loop():
                     risk_reasons.append("계좌/로컬 포지션 불일치")
                     print(f"[{now_str}] [RISK] 계좌/로컬 포지션 불일치로 신규 주문 중단 "
                           f"(broker={sorted(broker_codes)}, local={sorted(local_codes)})")
+
+            # 전일 유니버스 밖에서 당일 새로 거래가 몰린 종목을 5분마다 소수 보강한다.
+            intraday_scan_due = (
+                INTRADAY_SURGE_ENABLED
+                and account.get("ok")
+                and is_entry_window(now)
+                and time.time() - last_intraday_scan_time
+                    >= INTRADAY_SURGE_SCAN_INTERVAL_SECONDS
+            )
+            if intraday_scan_due:
+                last_intraday_scan_time = time.time()
+                surge_universe = api.get_intraday_surge_universe(
+                    INTRADAY_SURGE_MAX_CANDIDATES,
+                    MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW,
+                    intraday_surge_max_price(account),
+                    INTRADAY_SURGE_MIN_DAY_RETURN_PCT,
+                    INTRADAY_SURGE_MAX_DAY_RETURN_PCT,
+                    INTRADAY_SURGE_MIN_VOLUME_RATE_PCT,
+                )
+                intraday_surge_universe = surge_universe
+                intraday_surge_metadata = api.last_intraday_metadata
+                intraday_surge_names = set(surge_universe)
+                base_symbols = universe_cache.get("symbols", {})
+                base_metadata = universe_cache.get("metadata", {})
+                active_universe = {**base_symbols, **intraday_surge_universe}
+                universe_metadata = {**base_metadata, **intraday_surge_metadata}
+                realtime.set_symbols(
+                    list(active_universe.values())
+                    + [MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE,
+                       ETF_ROTATION_INVERSE_CODE]
+                    + [p.get("code") for p in positions.values()]
+                )
+                dashboard_context.update({
+                    "intraday_surge_count": len(intraday_surge_names),
+                    "intraday_surge_names": sorted(intraday_surge_names),
+                    "universe_count": len(active_universe),
+                    "universe_names": list(active_universe),
+                    "universe_symbols": [
+                        {"name": name, "code": code,
+                         "market": universe_metadata.get(name, {}).get(
+                             "market", "미분류"
+                         ),
+                         "sector": universe_metadata.get(name, {}).get(
+                             "sector", "미분류"
+                         )}
+                        for name, code in active_universe.items()
+                    ],
+                })
+                dashboard_dirty = True
+                print(
+                    f"[{now_str}] [INTRADAY] 거래량 급증 후보 "
+                    f"{len(intraday_surge_names)}종목: "
+                    f"{', '.join(sorted(intraday_surge_names)) or '-'}"
+                )
             
             # 1. 캔들 데이터 조회
             candles_dict = {}
@@ -1551,6 +1663,9 @@ def run_trading_loop():
             ) + evaluate_signals(
                 kosdaq_candles, kosdaq_market_candles, progress,
                 signal_diagnostics,
+            )
+            raw_signals = apply_intraday_surge_limits(
+                raw_signals, intraday_surge_names
             )
             rotation_position = next(
                 (
@@ -1883,15 +1998,17 @@ def run_trading_loop():
                         dashboard_dirty = True
                         continue
                     if (
-                        sig.get("strategy") == "비우호장 강한 VBO (15%)"
+                        sig.get("strategy") in {
+                            "비우호장 강한 VBO (15%)", INTRADAY_SURGE_STRATEGY
+                        }
                         and any(
-                            pos.get("strategy") == "비우호장 강한 VBO (15%)"
+                            pos.get("strategy") == sig.get("strategy")
                             for pos in positions.values()
                         )
                     ):
                         record_dashboard_event(
                             "SKIP", name, active_universe.get(name, ""),
-                            "비우호장 VBO 1종목 보유 상한",
+                            f"{sig.get('strategy')} 1종목 보유 상한",
                         )
                         dashboard_dirty = True
                         continue
