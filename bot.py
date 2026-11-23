@@ -602,6 +602,7 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
         "confirmed_signal_count": render_context.get("confirmed_signal_count", 0),
         "mim_state": render_context.get("mim_state", {}),
         "etf_rotation": render_context.get("etf_rotation", {}),
+        "sector_etf": render_context.get("sector_etf", {}),
     }
     save_json(DASHBOARD_STATE_FILE, dashboard_state)
     dashboard = render_dashboard(
