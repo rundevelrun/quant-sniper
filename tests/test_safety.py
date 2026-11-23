@@ -442,14 +442,24 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(result[1]["max_shares"], 0)
         self.assertIn("비우호장 50%", result[1]["reason"])
 
-    def test_etf_tradeability_blocks_one_share_above_strategy_allocation(self):
+    def test_sector_etf_allows_one_share_when_risk_and_cash_are_safe(self):
         result = build_etf_tradeability(
             {"091160": "KODEX 반도체"}, "섹터 ETF", 0.15, 0.025,
-            300000, 300000, {"091160": {"price": 84600}},
+            320000, 320000, {"091160": {"price": 84600}},
+            allow_one_share_over_allocation=True,
+        )
+        self.assertTrue(result[0]["eligible"])
+        self.assertEqual(result[0]["max_shares"], 1)
+        self.assertTrue(result[0]["one_share_exception"])
+
+    def test_sector_etf_one_share_exception_never_breaks_risk_limit(self):
+        result = build_etf_tradeability(
+            {"091160": "KODEX 반도체"}, "섹터 ETF", 0.15, 0.04,
+            320000, 320000, {"091160": {"price": 84600}},
+            allow_one_share_over_allocation=True,
         )
         self.assertFalse(result[0]["eligible"])
         self.assertEqual(result[0]["max_shares"], 0)
-        self.assertIn("배정 한도 15%", result[0]["reason"])
 
     def test_etf_tradeability_matches_allocation_risk_and_cash_limits(self):
         result = build_etf_tradeability(

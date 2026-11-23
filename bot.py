@@ -445,25 +445,6 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         )
 
     lines += [
-        "", "## ETF 매수 가능성", "",
-        "> 실제 총자산·현금 버퍼·전략 배정 한도·거래당 위험 한도를 모두 반영합니다.", "",
-        "| 전략 | ETF | 현재가 | 배정 한도 | 가능 수량 | 상태 |",
-        "|---|---|---:|---:|---:|---|",
-    ]
-    if etf_tradeability:
-        for item in etf_tradeability:
-            price = item.get("price")
-            lines.append(
-                f"| {_md(item.get('strategy'))} | {_md(item.get('name'))} "
-                f"| {f'{float(price):,.0f}원' if price else '-'} "
-                f"| {float(item.get('allocation_pct', 0)):.0f}% "
-                f"| {int(item.get('max_shares', 0))}주 "
-                f"| {'매수 가능' if item.get('eligible') else _md(item.get('reason'))} |"
-            )
-    else:
-        lines.append("| - | 계산 대기 | - | - | - | 계좌 또는 시세 확인 대기 |")
-
-    lines += [
         "", "## 유력 감시 종목", "",
         f"> 전체 {int(context.get('universe_count', 0))}개 중 신호 우선·RSI 오름차순 최대 10개", "",
         "| 종목 | 시장 | 직전 RSI | 현재 RSI | 신호 | 현재 판단 |",
@@ -596,7 +577,6 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     lines = order_dashboard_sections(lines, [
         "현재 상태",
         "전략별 현재 판단",
-        "ETF 매수 가능성",
         "현재 보유 포지션",
         "계좌 안전장치",
         "전체 성과",
@@ -668,7 +648,6 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
         "mim_state": render_context.get("mim_state", {}),
         "etf_rotation": render_context.get("etf_rotation", {}),
         "sector_etf": render_context.get("sector_etf", {}),
-        "etf_tradeability": render_context.get("etf_tradeability", []),
     }
     save_json(DASHBOARD_STATE_FILE, dashboard_state)
     dashboard = render_dashboard(
@@ -1123,7 +1102,8 @@ def build_tradeability(active_universe, universe_metadata, candles_dict,
 
 def build_etf_tradeability(assets, strategy, allocation_pct, stop_loss_pct,
                            total_assets, cash, quotes,
-                           size_multiplier=1.0):
+                           size_multiplier=1.0,
+                           allow_one_share_over_allocation=False):
     """ETF 전략의 실제 주문식과 동일한 한도로 매수 가능 수량을 계산한다."""
     available_cash = entry_cash_after_reserve(total_assets, cash)
     results = []
@@ -1136,6 +1116,9 @@ def build_etf_tradeability(assets, strategy, allocation_pct, stop_loss_pct,
         allocation_shares = (
             int(total_assets * allocation_pct // price) if price > 0 else 0
         )
+        risk_cash_shares = shares
+        if allow_one_share_over_allocation and shares >= 1:
+            allocation_shares = max(1, allocation_shares)
         shares = min(shares, allocation_shares)
         if price <= 0:
             reason = "키움 실시간 가격 없음"
@@ -1153,6 +1136,11 @@ def build_etf_tradeability(assets, strategy, allocation_pct, stop_loss_pct,
             "code": code,
             "price": price or None,
             "allocation_pct": allocation_pct * 100,
+            "one_share_exception": bool(
+                allow_one_share_over_allocation
+                and risk_cash_shares >= 1
+                and total_assets * allocation_pct < price
+            ),
             "max_shares": shares,
             "eligible": shares > 0,
             "reason": reason,
@@ -2039,6 +2027,7 @@ def run_trading_loop():
                     float(account.get("total_assets") or 0),
                     float(account.get("cash") or 0), etf_quotes,
                     entry_size_multiplier,
+                    allow_one_share_over_allocation=True,
                 )
             dashboard_context["etf_tradeability"] = etf_tradeability
             etf_tradeability_by_code = {
@@ -2112,6 +2101,7 @@ def run_trading_loop():
                         "entry_price": float(sector_quote["price"]),
                         "size_multiplier": 1.0,
                         "max_investment_pct": SECTOR_ETF_ALLOC_PCT,
+                        "allow_one_share_over_allocation": True,
                         "stop_loss_pct": SECTOR_ETF_STOP_LOSS_PCT,
                         "take_profit_pct": 1.0,
                         "atr": float(sector_quote["price"]) * SECTOR_ETF_STOP_LOSS_PCT,
@@ -2479,6 +2469,13 @@ def run_trading_loop():
                         strategy_allocation_shares = int(
                             total_assets * float(sig["max_investment_pct"]) // entry_p
                         )
+                        if (
+                            sig.get("allow_one_share_over_allocation")
+                            and shares >= 1
+                        ):
+                            strategy_allocation_shares = max(
+                                1, strategy_allocation_shares
+                            )
                         shares = min(shares, strategy_allocation_shares)
                     if shares < 1:
                         print(f"[{now_str}] [SKIP] {name}: 1주가 투자/위험 한도를 초과")
