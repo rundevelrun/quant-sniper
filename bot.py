@@ -403,9 +403,11 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     if ETF_ROTATION_ENABLED:
         rotation_trade = etf_tradeability_by_code.get(rotation.get("target_code"), {})
         rotation_status = (
-            "매수 불가" if rotation.get("regime") == "asset"
+            "보유 중" if rotation.get("held")
+            else "당일 재진입 제한" if rotation.get("traded_today")
+            else "매수 불가" if rotation.get("regime") == "asset"
             and rotation_trade and not rotation_trade.get("eligible")
-            else "보유/감시" if rotation.get("regime") != "cash"
+            else "진입 감시" if rotation.get("regime") != "cash"
             else "현금 대기"
         )
         lines.append(
@@ -421,9 +423,11 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             sector_rotation.get("target_code"), {}
         )
         sector_status = (
-            "매수 불가" if sector_rotation.get("regime") == "asset"
+            "보유 중" if sector_rotation.get("held")
+            else "당일 재진입 제한" if sector_rotation.get("traded_today")
+            else "매수 불가" if sector_rotation.get("regime") == "asset"
             and sector_trade and not sector_trade.get("eligible")
-            else "보유/감시" if sector_rotation.get("regime") == "asset"
+            else "진입 감시" if sector_rotation.get("regime") == "asset"
             else "현금 대기"
         )
         lines.append(
@@ -1984,6 +1988,7 @@ def run_trading_loop():
                 "enabled": ETF_ROTATION_ENABLED,
                 "regime": rotation_regime,
                 "target_code": rotation_target_code,
+                "held": bool(existing_rotation_position),
                 **rotation_detail,
             }
             existing_sector_position = next(
@@ -2005,6 +2010,7 @@ def run_trading_loop():
                 "enabled": SECTOR_ETF_ENABLED,
                 "regime": sector_regime,
                 "target_code": sector_target_code,
+                "held": bool(existing_sector_position),
                 **sector_detail,
             }
             etf_tradeability = []
@@ -2059,6 +2065,7 @@ def run_trading_loop():
             )
             rotation_position = existing_rotation_position
             rotation_blocked_today = etf_rotation_traded_today(trades, today_str)
+            dashboard_context["etf_rotation"]["traded_today"] = rotation_blocked_today
             if (
                 ETF_ROTATION_ENABLED and rotation_target_code
                 and not rotation_position and not rotation_blocked_today
@@ -2084,6 +2091,7 @@ def run_trading_loop():
                     })
             sector_position = existing_sector_position
             sector_blocked_today = sector_etf_traded_today(trades, today_str)
+            dashboard_context["sector_etf"]["traded_today"] = sector_blocked_today
             if (
                 SECTOR_ETF_ENABLED and sector_target_code
                 and not sector_position and not sector_blocked_today
