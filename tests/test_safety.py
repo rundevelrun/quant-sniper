@@ -849,9 +849,18 @@ class SafetyTests(unittest.TestCase):
                "trailing_gap_pct": 0.025, "highest_price": 10000,
                "strategy": "시장 ETF 3상태 추세전환"}
         stop, reason = update_position_stop(pos, 10600)
-        self.assertAlmostEqual(stop, 10335)
+        self.assertAlmostEqual(stop, 10441)
         self.assertEqual(reason, "고점 추적 트레일링 스탑")
         self.assertTrue(pos["trailing_active"])
+
+    def test_etf_rotation_uses_staged_profit_protection(self):
+        pos = {"buy_price": 10000, "stop_loss_pct": 0.025,
+               "highest_price": 10000,
+               "strategy": "시장 ETF 3상태 추세전환"}
+        self.assertEqual(update_position_stop(pos, 10200)[0], 10000)
+        self.assertEqual(update_position_stop(pos, 10300)[0], 10100)
+        self.assertEqual(update_position_stop(pos, 10400)[0], 10100)
+        self.assertEqual(update_position_stop(pos, 10500)[0], 10300)
 
 
 if __name__ == "__main__":

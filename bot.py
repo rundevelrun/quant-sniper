@@ -30,7 +30,7 @@ from config import (
     ETF_ROTATION_INVERSE_CODE, ETF_ROTATION_MA_PERIOD,
     ETF_ROTATION_SLOPE_DAYS, ETF_ROTATION_BAND_PCT,
     ETF_ROTATION_ALLOC_PCT, ETF_ROTATION_STOP_LOSS_PCT,
-    ETF_ROTATION_TRAILING_TRIGGER
+    ETF_ROTATION_TRAILING_TRIGGER, ETF_ROTATION_TRAILING_GAP
 )
 from strategy import calculate_atr, evaluate_signals, is_favorable_market
 from kiwoom_api import KiwoomRestAPI
@@ -328,7 +328,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 display_strategy = "ETF 추세전환"
                 exit_plan = (
                     f"국면 전환 · -{float(pos.get('stop_loss_pct', ETF_ROTATION_STOP_LOSS_PCT))*100:.1f}% 손절"
-                    " · +4% 보호 · +6% 추적"
+                    " · +2% 본전 · +3% 보호 · +5% 강화 · +6% 추적"
                 )
             elif strategy == MIM_STRATEGY:
                 display_strategy = "장마감 모멘텀"
@@ -677,17 +677,33 @@ def update_position_stop(pos, current_price):
     pos["highest_price"] = highest_price
     stop_price = buy_price * (1 - stop_loss_pct)
 
-    trailing_trigger = (
-        ETF_ROTATION_TRAILING_TRIGGER
-        if pos.get("strategy") == ETF_ROTATION_STRATEGY
-        else TAKE_PROFIT_PCT
-    )
+    is_rotation = pos.get("strategy") == ETF_ROTATION_STRATEGY
+    trailing_trigger = ETF_ROTATION_TRAILING_TRIGGER if is_rotation else TAKE_PROFIT_PCT
     if highest_price >= buy_price * (1 + trailing_trigger):
-        gap = float(pos.get("trailing_gap_pct", max(0.02, min(0.04, stop_loss_pct / 1.5))))
+        gap = (
+            ETF_ROTATION_TRAILING_GAP
+            if is_rotation
+            else float(pos.get(
+                "trailing_gap_pct",
+                max(0.02, min(0.04, stop_loss_pct / 1.5)),
+            ))
+        )
         pos["trailing_active"] = True
         stop_price = max(float(pos.get("trailing_stop_price", 0)), highest_price * (1 - gap))
         pos["trailing_stop_price"] = stop_price
         reason = "고점 추적 트레일링 스탑"
+    elif is_rotation and highest_price >= buy_price * 1.05:
+        stop_price = max(float(pos.get("trailing_stop_price", 0)), buy_price * 1.03)
+        pos["trailing_stop_price"] = stop_price
+        reason = "ETF 수익 보호 스탑 (+3%)"
+    elif is_rotation and highest_price >= buy_price * 1.03:
+        stop_price = max(float(pos.get("trailing_stop_price", 0)), buy_price * 1.01)
+        pos["trailing_stop_price"] = stop_price
+        reason = "ETF 수익 보호 스탑 (+1%)"
+    elif is_rotation and highest_price >= buy_price * 1.02:
+        stop_price = max(float(pos.get("trailing_stop_price", 0)), buy_price)
+        pos["trailing_stop_price"] = stop_price
+        reason = "ETF 본전 보호 스탑"
     elif highest_price >= buy_price * (1 + TRAILING_STOP_TRIGGER):
         stop_price = max(float(pos.get("trailing_stop_price", 0)),
                          buy_price * (1 + TRAILING_STOP_LOCK))
