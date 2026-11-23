@@ -33,6 +33,11 @@ from config import (
     ETF_ROTATION_LONG_MOMENTUM_DAYS, ETF_ROTATION_SWITCH_MARGIN,
     ETF_ROTATION_ALLOC_PCT, ETF_ROTATION_STOP_LOSS_PCT,
     ETF_ROTATION_TRAILING_TRIGGER, ETF_ROTATION_TRAILING_GAP,
+    SECTOR_ETF_ENABLED, SECTOR_ETF_ASSETS, SECTOR_ETF_MA_PERIOD,
+    SECTOR_ETF_SLOPE_DAYS, SECTOR_ETF_BAND_PCT,
+    SECTOR_ETF_SHORT_MOMENTUM_DAYS, SECTOR_ETF_LONG_MOMENTUM_DAYS,
+    SECTOR_ETF_SWITCH_MARGIN, SECTOR_ETF_ALLOC_PCT,
+    SECTOR_ETF_STOP_LOSS_PCT,
     INTRADAY_SURGE_ENABLED, INTRADAY_SURGE_SCAN_INTERVAL_SECONDS,
     INTRADAY_SURGE_MAX_CANDIDATES, INTRADAY_SURGE_MIN_DAY_RETURN_PCT,
     INTRADAY_SURGE_MAX_DAY_RETURN_PCT, INTRADAY_SURGE_MIN_VOLUME_RATE_PCT,
@@ -59,9 +64,13 @@ UNIVERSE_STRATEGY_VERSION = "rsi_vbo_mixed_v5"
 MIM_STRATEGY = "KODEX200 장마감 30분 모멘텀"
 MIM_POSITION_NAME = "KODEX200 장마감 모멘텀"
 ETF_ROTATION_STRATEGY = "시장 ETF 3상태 추세전환"
+SECTOR_ETF_STRATEGY = "섹터 ETF 추세추종"
 INTRADAY_SURGE_STRATEGY = "당일 거래량 급증 VBO (15%)"
 ETF_ROTATION_NAMES = {
     code: f"{name} 추세" for code, name in ETF_ROTATION_ASSETS.items()
+}
+SECTOR_ETF_NAMES = {
+    code: f"{name} 추세" for code, name in SECTOR_ETF_ASSETS.items()
 }
 ETF_ROUNDTRIP_COST_PCT = (BROKER_COMMISSION_PCT * 2) + (
     SLIPPAGE_ESTIMATE_PCT * 2
@@ -291,6 +300,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             else "🔴 비우호 국면 — 강한 RSI 50%·예외 VBO 15%"
         )
     rotation = context.get("etf_rotation", {})
+    sector_rotation = context.get("sector_etf", {})
     regime_label = (
         rotation.get("target_name")
         if rotation.get("regime") == "asset"
@@ -337,6 +347,13 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                     f"국면 전환 · -{float(pos.get('stop_loss_pct', ETF_ROTATION_STOP_LOSS_PCT))*100:.1f}% 손절"
                     " · +2% 본전 · +3% 보호 · +5% 강화 · +6% 추적"
                 )
+            elif strategy == SECTOR_ETF_STRATEGY:
+                display_name = name.removesuffix(" 추세")
+                display_strategy = "섹터 ETF 추세"
+                exit_plan = (
+                    f"섹터 전환 · -{float(pos.get('stop_loss_pct', SECTOR_ETF_STOP_LOSS_PCT))*100:.1f}% 손절"
+                    " · +2% 본전 · +3% 보호 · +5% 강화 · +6% 추적"
+                )
             elif strategy == MIM_STRATEGY:
                 display_strategy = "장마감 모멘텀"
                 exit_plan = f"-{MIM_STOP_LOSS_PCT*100:.1f}% 손절 또는 {MIM_EXIT_TIME} 청산"
@@ -374,6 +391,15 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         lines.append(
             f"| ETF 추세전환 | {'보유/감시' if rotation.get('regime') != 'cash' else '현금 대기'} "
             f"| {regime_label} | 전일 확정 3/6개월 모멘텀·60일선·교체 완충 |"
+        )
+    if SECTOR_ETF_ENABLED:
+        sector_label = (
+            sector_rotation.get("target_name")
+            if sector_rotation.get("regime") == "asset" else "현금"
+        )
+        lines.append(
+            f"| 섹터 ETF 추세 | {'보유/감시' if sector_rotation.get('regime') == 'asset' else '현금 대기'} "
+            f"| {sector_label} | 전일 확정 1/3개월 모멘텀·시장 상대강도·최대 15% |"
         )
     lines += [
         f"| RSI 반등 | {'신호 확인 중' if int(context.get('confirming_signal_count', 0)) else '대기'} "
@@ -687,11 +713,13 @@ def update_position_stop(pos, current_price):
     stop_price = buy_price * (1 - stop_loss_pct)
 
     is_rotation = pos.get("strategy") == ETF_ROTATION_STRATEGY
-    trailing_trigger = ETF_ROTATION_TRAILING_TRIGGER if is_rotation else TAKE_PROFIT_PCT
+    is_sector_etf = pos.get("strategy") == SECTOR_ETF_STRATEGY
+    is_trend_etf = is_rotation or is_sector_etf
+    trailing_trigger = ETF_ROTATION_TRAILING_TRIGGER if is_trend_etf else TAKE_PROFIT_PCT
     if highest_price >= buy_price * (1 + trailing_trigger):
         gap = (
             ETF_ROTATION_TRAILING_GAP
-            if is_rotation
+            if is_trend_etf
             else float(pos.get(
                 "trailing_gap_pct",
                 max(0.02, min(0.04, stop_loss_pct / 1.5)),
@@ -701,15 +729,15 @@ def update_position_stop(pos, current_price):
         stop_price = max(float(pos.get("trailing_stop_price", 0)), highest_price * (1 - gap))
         pos["trailing_stop_price"] = stop_price
         reason = "고점 추적 트레일링 스탑"
-    elif is_rotation and highest_price >= buy_price * 1.05:
+    elif is_trend_etf and highest_price >= buy_price * 1.05:
         stop_price = max(float(pos.get("trailing_stop_price", 0)), buy_price * 1.03)
         pos["trailing_stop_price"] = stop_price
         reason = "ETF 수익 보호 스탑 (+3%)"
-    elif is_rotation and highest_price >= buy_price * 1.03:
+    elif is_trend_etf and highest_price >= buy_price * 1.03:
         stop_price = max(float(pos.get("trailing_stop_price", 0)), buy_price * 1.01)
         pos["trailing_stop_price"] = stop_price
         reason = "ETF 수익 보호 스탑 (+1%)"
-    elif is_rotation and highest_price >= buy_price * 1.02:
+    elif is_trend_etf and highest_price >= buy_price * 1.02:
         stop_price = max(float(pos.get("trailing_stop_price", 0)), buy_price)
         pos["trailing_stop_price"] = stop_price
         reason = "ETF 본전 보호 스탑"
@@ -1239,9 +1267,114 @@ def multi_asset_trend_selection(candles_by_code, held_code=None, now=None):
         ),
     }
 
+def sector_etf_trend_selection(candles_by_code, benchmark_candles,
+                               held_code=None, now=None):
+    """시장보다 강하고 자체 상승 추세인 섹터 ETF 한 종목을 선택한다."""
+    now = now or datetime.datetime.now()
+    today = now.strftime("%Y%m%d")
+    needed = max(
+        SECTOR_ETF_MA_PERIOD + SECTOR_ETF_SLOPE_DAYS,
+        SECTOR_ETF_LONG_MOMENTUM_DAYS + 1,
+    )
+    benchmark_completed = [
+        candle for candle in benchmark_candles
+        if str(candle.get("date", "")).replace("-", "") != today
+        and float(candle.get("close") or 0) > 0
+    ]
+    if len(benchmark_completed) < SECTOR_ETF_SHORT_MOMENTUM_DAYS + 1:
+        return "cash", None, {
+            "reason": "시장 비교 일봉 부족", "assets": {},
+        }
+    benchmark_closes = [float(item["close"]) for item in benchmark_completed]
+    benchmark_return = (
+        benchmark_closes[-1]
+        / benchmark_closes[-SECTOR_ETF_SHORT_MOMENTUM_DAYS - 1] - 1
+    )
+
+    rankings = []
+    asset_details = {}
+    for code, candles in candles_by_code.items():
+        completed = [
+            candle for candle in candles
+            if str(candle.get("date", "")).replace("-", "") != today
+            and float(candle.get("close") or 0) > 0
+        ]
+        if len(completed) < needed:
+            asset_details[code] = {
+                "name": SECTOR_ETF_ASSETS.get(code, code),
+                "eligible": False, "reason": f"확정 일봉 {needed}개 미만",
+            }
+            continue
+        closes = [float(item["close"]) for item in completed]
+        close = closes[-1]
+        ma_now = sum(closes[-SECTOR_ETF_MA_PERIOD:]) / SECTOR_ETF_MA_PERIOD
+        previous_end = -SECTOR_ETF_SLOPE_DAYS
+        ma_previous = (
+            sum(closes[previous_end-SECTOR_ETF_MA_PERIOD:previous_end])
+            / SECTOR_ETF_MA_PERIOD
+        )
+        short_return = close / closes[-SECTOR_ETF_SHORT_MOMENTUM_DAYS - 1] - 1
+        long_return = close / closes[-SECTOR_ETF_LONG_MOMENTUM_DAYS - 1] - 1
+        relative_strength = short_return - benchmark_return
+        score = short_return * 0.4 + long_return * 0.6
+        eligible = (
+            close > ma_now * (1 + SECTOR_ETF_BAND_PCT)
+            and ma_now > ma_previous
+            and short_return > 0 and long_return > 0
+            and relative_strength > 0
+        )
+        detail = {
+            "name": SECTOR_ETF_ASSETS.get(code, code),
+            "previous_close": close,
+            "ma": ma_now,
+            "ma_5d_ago": ma_previous,
+            "short_return_pct": round(short_return * 100, 2),
+            "long_return_pct": round(long_return * 100, 2),
+            "relative_strength_pct": round(relative_strength * 100, 2),
+            "score": score,
+            "score_pct": round(score * 100, 2),
+            "eligible": eligible,
+            "reason": "60일선 상승·1/3개월 양수·KODEX 200 대비 강세",
+        }
+        asset_details[code] = detail
+        if eligible:
+            rankings.append((score, code))
+
+    rankings.sort(reverse=True)
+    if not rankings:
+        return "cash", None, {
+            "reason": "시장보다 강한 상승 섹터 없음", "assets": asset_details,
+        }
+    best_score, target_code = rankings[0]
+    if held_code and held_code != target_code:
+        held_detail = asset_details.get(held_code, {})
+        if (
+            held_detail.get("eligible")
+            and best_score < float(held_detail.get("score", 0))
+                + SECTOR_ETF_SWITCH_MARGIN
+        ):
+            target_code = held_code
+    target = asset_details[target_code]
+    return "asset", target_code, {
+        **target,
+        "target_name": target["name"],
+        "assets": asset_details,
+        "reason": (
+            "전일 확정 1/3개월 모멘텀·KODEX 200 상대강도·"
+            f"교체 완충 {SECTOR_ETF_SWITCH_MARGIN*100:.0f}%p"
+        ),
+    }
+
 def etf_rotation_traded_today(trades, today):
     return any(
         trade.get("strategy") == ETF_ROTATION_STRATEGY
+        and str(trade.get("timestamp", "")).startswith(today)
+        for trade in trades
+    )
+
+def sector_etf_traded_today(trades, today):
+    return any(
+        trade.get("strategy") == SECTOR_ETF_STRATEGY
         and str(trade.get("timestamp", "")).startswith(today)
         for trade in trades
     )
@@ -1357,6 +1490,7 @@ def run_trading_loop():
                 list(active_universe.values())
                 + [MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE]
                 + list(ETF_ROTATION_ASSETS)
+                + list(SECTOR_ETF_ASSETS)
                 + [p.get("code") for p in load_json(POSITIONS_FILE, {}).values()]
             )
             proxy_quote = (
@@ -1643,6 +1777,7 @@ def run_trading_loop():
                     list(active_universe.values())
                     + [MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE]
                     + list(ETF_ROTATION_ASSETS)
+                    + list(SECTOR_ETF_ASSETS)
                     + [p.get("code") for p in positions.values()]
                 )
                 dashboard_context.update({
@@ -1705,6 +1840,14 @@ def run_trading_loop():
                 )
                 if cache_miss:
                     time.sleep(API_REQUEST_DELAY)
+            sector_candles = {}
+            for sector_code in SECTOR_ETF_ASSETS:
+                cache_miss = sector_code not in daily_candle_cache
+                sector_candles[sector_code] = get_kiwoom_candles(
+                    api, realtime, daily_candle_cache, sector_code, now, count=70
+                )
+                if cache_miss:
+                    time.sleep(API_REQUEST_DELAY)
             market_regimes = {
                 "KOSPI": is_favorable_market(kospi_market_candles),
                 "KOSDAQ": is_favorable_market(kosdaq_market_candles),
@@ -1748,6 +1891,27 @@ def run_trading_loop():
                 "regime": rotation_regime,
                 "target_code": rotation_target_code,
                 **rotation_detail,
+            }
+            existing_sector_position = next(
+                (
+                    pos for pos in positions.values()
+                    if pos.get("strategy") == SECTOR_ETF_STRATEGY
+                ),
+                None,
+            )
+            sector_regime, sector_target_code, sector_detail = (
+                sector_etf_trend_selection(
+                    sector_candles, kospi_market_candles,
+                    existing_sector_position.get("code")
+                    if existing_sector_position else None,
+                    now,
+                )
+            )
+            dashboard_context["sector_etf"] = {
+                "enabled": SECTOR_ETF_ENABLED,
+                "regime": sector_regime,
+                "target_code": sector_target_code,
+                **sector_detail,
             }
             kosdaq_names = {
                 name for name, meta in universe_metadata.items()
@@ -1795,6 +1959,28 @@ def run_trading_loop():
                         "roundtrip_cost_pct": ETF_ROUNDTRIP_COST_PCT,
                         "order_exchange": "KRX",
                     })
+            sector_position = existing_sector_position
+            sector_blocked_today = sector_etf_traded_today(trades, today_str)
+            if (
+                SECTOR_ETF_ENABLED and sector_target_code
+                and not sector_position and not sector_blocked_today
+            ):
+                sector_quote = realtime.quote(sector_target_code)
+                if sector_quote:
+                    raw_signals.append({
+                        "name": SECTOR_ETF_NAMES[sector_target_code],
+                        "code": sector_target_code,
+                        "strategy": SECTOR_ETF_STRATEGY,
+                        "score": -1.5,
+                        "entry_price": float(sector_quote["price"]),
+                        "size_multiplier": 1.0,
+                        "max_investment_pct": SECTOR_ETF_ALLOC_PCT,
+                        "stop_loss_pct": SECTOR_ETF_STOP_LOSS_PCT,
+                        "take_profit_pct": 1.0,
+                        "atr": float(sector_quote["price"]) * SECTOR_ETF_STOP_LOSS_PCT,
+                        "roundtrip_cost_pct": ETF_ROUNDTRIP_COST_PCT,
+                        "order_exchange": "KRX",
+                    })
             if (
                 MIM_ENABLED and is_mim_entry_window(now)
                 and mim_long_signal(mim_state)
@@ -1834,7 +2020,9 @@ def run_trading_loop():
                 raw_signals = [
                     sig for sig in raw_signals
                     if sig["name"] in monitored_set
-                    or sig.get("strategy") in {MIM_STRATEGY, ETF_ROTATION_STRATEGY}
+                    or sig.get("strategy") in {
+                        MIM_STRATEGY, ETF_ROTATION_STRATEGY, SECTOR_ETF_STRATEGY
+                    }
                 ]
                 dashboard_context["tradeability"] = [
                     item for item in tradeability if item.get("eligible")
@@ -1871,8 +2059,9 @@ def run_trading_loop():
             for name, pos in list(positions.items()):
                 is_mim_position = pos.get("strategy") == MIM_STRATEGY
                 is_rotation_position = pos.get("strategy") == ETF_ROTATION_STRATEGY
+                is_sector_position = pos.get("strategy") == SECTOR_ETF_STRATEGY
                 if name not in candles_dict and not (
-                    is_mim_position or is_rotation_position
+                    is_mim_position or is_rotation_position or is_sector_position
                 ):
                     continue
                 quote = realtime.quote(pos["code"])
@@ -1902,6 +2091,16 @@ def run_trading_loop():
                         if not ETF_ROTATION_ENABLED
                         else f"ETF 국면 전환: {rotation_regime}"
                     )
+                elif is_sector_position and (
+                    not SECTOR_ETF_ENABLED
+                    or pos.get("code") != sector_target_code
+                ):
+                    exit_price = curr_p
+                    exit_reason = (
+                        "섹터 ETF 전략 비활성화 청산"
+                        if not SECTOR_ETF_ENABLED
+                        else f"섹터 추세 전환: {sector_detail.get('target_name', '현금')}"
+                    )
                 elif is_mim_position and (
                     pos.get("entry_date") != today_str or now >= mim_exit_at
                 ):
@@ -1918,7 +2117,7 @@ def run_trading_loop():
                     if curr_p <= stop_price:
                         exit_price = stop_price
                         exit_reason = stop_reason
-                    elif not is_rotation_position:
+                    elif not (is_rotation_position or is_sector_position):
                         time_exit_reason = time_stop_reason(pos, curr_p)
                         if time_exit_reason:
                             exit_price = curr_p

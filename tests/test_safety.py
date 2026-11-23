@@ -16,7 +16,8 @@ from bot import (
     is_market_open, is_mim_entry_window, market_session_progress,
     mim_long_signal, save_json, trading_days_held, update_mim_state,
     etf_rotation_regime, etf_rotation_traded_today,
-    multi_asset_trend_selection,
+    multi_asset_trend_selection, sector_etf_trend_selection,
+    sector_etf_traded_today,
     estimate_external_cash_flow, sector_limit_reached, time_stop_reason,
     apply_intraday_surge_limits, intraday_surge_max_price,
     screening_preferred_max_price,
@@ -666,6 +667,43 @@ class SafetyTests(unittest.TestCase):
         result = get_kiwoom_candles(api, Feed(), cache, "069500", now, 130)
         self.assertEqual(api.counts, [70, 130])
         self.assertEqual(len(result), 130)
+
+    def test_sector_etf_selects_strong_asset_above_market(self):
+        start = datetime.date(2026, 8, 1)
+        def series(growth):
+            return [
+                {"date": (start + datetime.timedelta(days=index)).strftime("%Y%m%d"),
+                 "close": 100 + index * growth}
+                for index in range(70)
+            ]
+        regime, code, detail = sector_etf_trend_selection(
+            {"091160": series(0.8), "091170": series(0.3)},
+            series(0.2), now=datetime.datetime(2026, 11, 20, 10, 0),
+        )
+        self.assertEqual(regime, "asset")
+        self.assertEqual(code, "091160")
+        self.assertEqual(detail["target_name"], "KODEX 반도체")
+
+    def test_sector_etf_waits_when_no_sector_beats_market(self):
+        start = datetime.date(2026, 8, 1)
+        def series(growth):
+            return [
+                {"date": (start + datetime.timedelta(days=index)).strftime("%Y%m%d"),
+                 "close": 100 + index * growth}
+                for index in range(70)
+            ]
+        regime, code, _ = sector_etf_trend_selection(
+            {"091160": series(0.2)}, series(0.8),
+            now=datetime.datetime(2026, 11, 20, 10, 0),
+        )
+        self.assertEqual((regime, code), ("cash", None))
+
+    def test_sector_etf_does_not_reenter_on_same_day(self):
+        trades = [{
+            "timestamp": "2026-11-20 10:00:00", "type": "SELL",
+            "strategy": "섹터 ETF 추세추종",
+        }]
+        self.assertTrue(sector_etf_traded_today(trades, "2026-11-20"))
 
     def test_dashboard_shows_separate_mim_pilot_state(self):
         class Feed:
