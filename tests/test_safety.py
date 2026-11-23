@@ -16,9 +16,11 @@ from bot import (
     is_market_open, is_mim_entry_window, market_session_progress,
     mim_long_signal, save_json, trading_days_held, update_mim_state,
     etf_rotation_regime, etf_rotation_traded_today,
+    multi_asset_trend_selection,
     estimate_external_cash_flow, sector_limit_reached, time_stop_reason,
     apply_intraday_surge_limits, intraday_surge_max_price,
     screening_preferred_max_price,
+    get_kiwoom_candles,
     restore_daily_account_metrics, restore_position_last_prices,
     update_dashboard_events, update_position_stop,
     render_dashboard, return_pct_svg,
@@ -610,6 +612,60 @@ class SafetyTests(unittest.TestCase):
         }]
         self.assertTrue(etf_rotation_traded_today(trades, "2026-11-20"))
         self.assertFalse(etf_rotation_traded_today(trades, "2026-11-21"))
+
+    def test_multi_asset_trend_selects_strongest_eligible_asset(self):
+        start = datetime.date(2026, 5, 1)
+        def series(code_growth):
+            return [
+                {"date": (start + datetime.timedelta(days=index)).strftime("%Y%m%d"),
+                 "close": 100 + index * code_growth}
+                for index in range(130)
+            ]
+
+        regime, code, detail = multi_asset_trend_selection(
+            {"069500": series(0.2), "379810": series(0.8)},
+            now=datetime.datetime(2026, 11, 20, 10, 0),
+        )
+        self.assertEqual(regime, "asset")
+        self.assertEqual(code, "379810")
+        self.assertEqual(detail["target_name"], "KODEX 미국나스닥100")
+
+    def test_multi_asset_trend_keeps_holding_within_switch_margin(self):
+        start = datetime.date(2026, 5, 1)
+        held = [
+            {"date": (start + datetime.timedelta(days=index)).strftime("%Y%m%d"),
+             "close": 100 + index * 0.50}
+            for index in range(130)
+        ]
+        challenger = [
+            {"date": (start + datetime.timedelta(days=index)).strftime("%Y%m%d"),
+             "close": 100 + index * 0.51}
+            for index in range(130)
+        ]
+        _, code, _ = multi_asset_trend_selection(
+            {"069500": held, "379810": challenger}, held_code="069500",
+            now=datetime.datetime(2026, 11, 20, 10, 0),
+        )
+        self.assertEqual(code, "069500")
+
+    def test_daily_candle_cache_refetches_for_longer_etf_history(self):
+        class Api:
+            def __init__(self):
+                self.counts = []
+            def get_daily_candles(self, code, count):
+                self.counts.append(count)
+                return [{"date": str(index), "close": 100} for index in range(count)]
+        class Feed:
+            def quote(self, code):
+                return None
+
+        api = Api()
+        cache = {}
+        now = datetime.datetime(2026, 11, 20, 10, 0)
+        get_kiwoom_candles(api, Feed(), cache, "069500", now, 70)
+        result = get_kiwoom_candles(api, Feed(), cache, "069500", now, 130)
+        self.assertEqual(api.counts, [70, 130])
+        self.assertEqual(len(result), 130)
 
     def test_dashboard_shows_separate_mim_pilot_state(self):
         class Feed:

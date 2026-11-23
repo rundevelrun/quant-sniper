@@ -29,6 +29,8 @@ from config import (
     ETF_ROTATION_ENABLED, ETF_ROTATION_LONG_CODE,
     ETF_ROTATION_INVERSE_CODE, ETF_ROTATION_MA_PERIOD,
     ETF_ROTATION_SLOPE_DAYS, ETF_ROTATION_BAND_PCT,
+    ETF_ROTATION_ASSETS, ETF_ROTATION_SHORT_MOMENTUM_DAYS,
+    ETF_ROTATION_LONG_MOMENTUM_DAYS, ETF_ROTATION_SWITCH_MARGIN,
     ETF_ROTATION_ALLOC_PCT, ETF_ROTATION_STOP_LOSS_PCT,
     ETF_ROTATION_TRAILING_TRIGGER, ETF_ROTATION_TRAILING_GAP,
     INTRADAY_SURGE_ENABLED, INTRADAY_SURGE_SCAN_INTERVAL_SECONDS,
@@ -59,8 +61,7 @@ MIM_POSITION_NAME = "KODEX200 장마감 모멘텀"
 ETF_ROTATION_STRATEGY = "시장 ETF 3상태 추세전환"
 INTRADAY_SURGE_STRATEGY = "당일 거래량 급증 VBO (15%)"
 ETF_ROTATION_NAMES = {
-    ETF_ROTATION_LONG_CODE: "KODEX 200 추세",
-    ETF_ROTATION_INVERSE_CODE: "KODEX 인버스 추세",
+    code: f"{name} 추세" for code, name in ETF_ROTATION_ASSETS.items()
 }
 ETF_ROUNDTRIP_COST_PCT = (BROKER_COMMISSION_PCT * 2) + (
     SLIPPAGE_ESTIMATE_PCT * 2
@@ -290,11 +291,12 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             else "🔴 비우호 국면 — 강한 RSI 50%·예외 VBO 15%"
         )
     rotation = context.get("etf_rotation", {})
-    regime_label = {
-        "long": "KODEX 200",
-        "inverse": "KODEX 인버스",
-        "cash": "현금",
-    }.get(rotation.get("regime"), "계산 대기")
+    regime_label = (
+        rotation.get("target_name")
+        if rotation.get("regime") == "asset"
+        else "현금" if rotation.get("regime") == "cash"
+        else "계산 대기"
+    )
     lines = [
         "# Quant Sniper Dashboard", "",
         f"> 마지막 갱신: **{now.strftime('%Y-%m-%d %H:%M:%S')} KST**  ",
@@ -371,7 +373,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     if ETF_ROTATION_ENABLED:
         lines.append(
             f"| ETF 추세전환 | {'보유/감시' if rotation.get('regime') != 'cash' else '현금 대기'} "
-            f"| {regime_label} | 전일 종가·60일선 ±1%·5거래일 기울기 |"
+            f"| {regime_label} | 전일 확정 3/6개월 모멘텀·60일선·교체 완충 |"
         )
     lines += [
         f"| RSI 반등 | {'신호 확인 중' if int(context.get('confirming_signal_count', 0)) else '대기'} "
@@ -742,11 +744,16 @@ def get_kiwoom_candles(api, realtime, cache, code, now, count=70):
     """일봉은 일 1회 REST로 받고 당일 봉만 키움 실시간 체결로 갱신한다."""
     date_key = now.strftime("%Y%m%d")
     cached = cache.get(code)
-    if not cached or cached["date"] != date_key:
+    if (
+        not cached or cached["date"] != date_key
+        or int(cached.get("requested_count", len(cached.get("candles", [])))) < count
+    ):
         candles = api.get_daily_candles(code, count)
         if not candles:
             return []
-        cache[code] = {"date": date_key, "candles": candles}
+        cache[code] = {
+            "date": date_key, "candles": candles, "requested_count": count,
+        }
     candles = [dict(item) for item in cache[code]["candles"]]
     quote = realtime.quote(code)
     if quote:
@@ -1149,6 +1156,89 @@ def etf_rotation_regime(candles, now=None):
         "reason": "60일선 ±1%와 5거래일 기울기",
     }
 
+def multi_asset_trend_selection(candles_by_code, held_code=None, now=None):
+    """전일 확정 일봉만으로 상승 추세 자산 중 모멘텀이 가장 강한 ETF를 고른다."""
+    now = now or datetime.datetime.now()
+    today = now.strftime("%Y%m%d")
+    needed = max(
+        ETF_ROTATION_MA_PERIOD + ETF_ROTATION_SLOPE_DAYS,
+        ETF_ROTATION_LONG_MOMENTUM_DAYS + 1,
+    )
+    rankings = []
+    asset_details = {}
+    for code, candles in candles_by_code.items():
+        completed = [
+            candle for candle in candles
+            if str(candle.get("date", "")).replace("-", "") != today
+            and float(candle.get("close") or 0) > 0
+        ]
+        if len(completed) < needed:
+            asset_details[code] = {
+                "name": ETF_ROTATION_ASSETS.get(code, code),
+                "eligible": False,
+                "reason": f"확정 일봉 {needed}개 미만",
+            }
+            continue
+        closes = [float(candle["close"]) for candle in completed]
+        close = closes[-1]
+        ma_now = sum(closes[-ETF_ROTATION_MA_PERIOD:]) / ETF_ROTATION_MA_PERIOD
+        previous_end = -ETF_ROTATION_SLOPE_DAYS
+        ma_previous = (
+            sum(closes[previous_end-ETF_ROTATION_MA_PERIOD:previous_end])
+            / ETF_ROTATION_MA_PERIOD
+        )
+        short_return = close / closes[-ETF_ROTATION_SHORT_MOMENTUM_DAYS - 1] - 1
+        long_return = close / closes[-ETF_ROTATION_LONG_MOMENTUM_DAYS - 1] - 1
+        score = short_return * 0.4 + long_return * 0.6
+        eligible = (
+            close > ma_now * (1 + ETF_ROTATION_BAND_PCT)
+            and ma_now > ma_previous
+            and score > 0
+        )
+        detail = {
+            "name": ETF_ROTATION_ASSETS.get(code, code),
+            "previous_close": close,
+            "ma": ma_now,
+            "ma_5d_ago": ma_previous,
+            "short_return_pct": round(short_return * 100, 2),
+            "long_return_pct": round(long_return * 100, 2),
+            "score": score,
+            "score_pct": round(score * 100, 2),
+            "eligible": eligible,
+            "reason": "60일선 +1%·상승 기울기·3/6개월 모멘텀",
+        }
+        asset_details[code] = detail
+        if eligible:
+            rankings.append((score, code))
+
+    rankings.sort(reverse=True)
+    if not rankings:
+        return "cash", None, {
+            "reason": "상승 추세 자산 없음", "assets": asset_details,
+        }
+
+    best_score, target_code = rankings[0]
+    # 작은 순위 변화로 ETF를 계속 갈아타지 않도록 기존 자산에 2%p 우선권을 준다.
+    if held_code and held_code != target_code:
+        held_detail = asset_details.get(held_code, {})
+        if (
+            held_detail.get("eligible")
+            and best_score < float(held_detail.get("score", 0))
+                + ETF_ROTATION_SWITCH_MARGIN
+        ):
+            target_code = held_code
+
+    target = asset_details[target_code]
+    return "asset", target_code, {
+        **target,
+        "target_name": target["name"],
+        "assets": asset_details,
+        "reason": (
+            "전일 확정 3/6개월 모멘텀 40/60%·60일선 +1%·"
+            f"교체 완충 {ETF_ROTATION_SWITCH_MARGIN*100:.0f}%p"
+        ),
+    }
+
 def etf_rotation_traded_today(trades, today):
     return any(
         trade.get("strategy") == ETF_ROTATION_STRATEGY
@@ -1265,8 +1355,8 @@ def run_trading_loop():
             })
             realtime.set_symbols(
                 list(active_universe.values())
-                + [MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE,
-                   ETF_ROTATION_INVERSE_CODE]
+                + [MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE]
+                + list(ETF_ROTATION_ASSETS)
                 + [p.get("code") for p in load_json(POSITIONS_FILE, {}).values()]
             )
             proxy_quote = (
@@ -1551,8 +1641,8 @@ def run_trading_loop():
                 universe_metadata = {**base_metadata, **intraday_surge_metadata}
                 realtime.set_symbols(
                     list(active_universe.values())
-                    + [MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE,
-                       ETF_ROTATION_INVERSE_CODE]
+                    + [MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE]
+                    + list(ETF_ROTATION_ASSETS)
                     + [p.get("code") for p in positions.values()]
                 )
                 dashboard_context.update({
@@ -1607,6 +1697,14 @@ def run_trading_loop():
             kosdaq_market_candles = get_kiwoom_candles(
                 api, realtime, daily_candle_cache, KOSDAQ_MARKET_PROXY_CODE, now
             )
+            rotation_candles = {}
+            for rotation_code in ETF_ROTATION_ASSETS:
+                cache_miss = rotation_code not in daily_candle_cache
+                rotation_candles[rotation_code] = get_kiwoom_candles(
+                    api, realtime, daily_candle_cache, rotation_code, now, count=130
+                )
+                if cache_miss:
+                    time.sleep(API_REQUEST_DELAY)
             market_regimes = {
                 "KOSPI": is_favorable_market(kospi_market_candles),
                 "KOSDAQ": is_favorable_market(kosdaq_market_candles),
@@ -1630,13 +1728,21 @@ def run_trading_loop():
                     "long_signal": mim_long_signal(mim_state),
                     "entry_attempted": bool(mim_state.get("entry_attempted")),
                 }
-            rotation_regime, rotation_detail = etf_rotation_regime(
-                kospi_market_candles, now
+            existing_rotation_position = next(
+                (
+                    pos for pos in positions.values()
+                    if pos.get("strategy") == ETF_ROTATION_STRATEGY
+                ),
+                None,
             )
-            rotation_target_code = {
-                "long": ETF_ROTATION_LONG_CODE,
-                "inverse": ETF_ROTATION_INVERSE_CODE,
-            }.get(rotation_regime)
+            rotation_regime, rotation_target_code, rotation_detail = (
+                multi_asset_trend_selection(
+                    rotation_candles,
+                    existing_rotation_position.get("code")
+                    if existing_rotation_position else None,
+                    now,
+                )
+            )
             dashboard_context["etf_rotation"] = {
                 "enabled": ETF_ROTATION_ENABLED,
                 "regime": rotation_regime,
@@ -1667,13 +1773,7 @@ def run_trading_loop():
             raw_signals = apply_intraday_surge_limits(
                 raw_signals, intraday_surge_names
             )
-            rotation_position = next(
-                (
-                    pos for pos in positions.values()
-                    if pos.get("strategy") == ETF_ROTATION_STRATEGY
-                ),
-                None,
-            )
+            rotation_position = existing_rotation_position
             rotation_blocked_today = etf_rotation_traded_today(trades, today_str)
             if (
                 ETF_ROTATION_ENABLED and rotation_target_code
