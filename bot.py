@@ -210,6 +210,15 @@ def dashboard_return(value, asset_name, context, html_image=False):
         )
     return f"![{text}](svg/{versioned_name}.svg)"
 
+RETURN_COLUMN_WIDTH = 76
+
+def dashboard_return_cell(value, asset_name, context):
+    """모든 수익률 SVG를 동일 폭의 가운데 정렬 셀에 배치한다."""
+    return (
+        f'<td width="{RETURN_COLUMN_WIDTH}" nowrap align="center" valign="middle">'
+        f'{dashboard_return(value, asset_name, context, html_image=True)}</td>'
+    )
+
 def order_dashboard_sections(lines, order):
     """완성된 Markdown 섹션을 지정된 운영 우선순위로 재배치한다."""
     starts = [index for index, line in enumerate(lines) if line.startswith("## ")]
@@ -326,7 +335,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         '<table width="100%">',
         '<thead><tr>',
         '<th width="18%">종목</th><th width="16%">전략</th>',
-        '<th width="70" nowrap>수익률</th><th width="10%">보유 기간</th>',
+        f'<th width="{RETURN_COLUMN_WIDTH}" nowrap align="center">수익률</th><th width="10%">보유 기간</th>',
         '<th width="12%">현재 보호</th><th width="34%">청산 계획</th>',
         '</tr></thead><tbody>',
     ]
@@ -369,7 +378,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 '<tr>'
                 f'<td>{html.escape(str(display_name))}</td>'
                 f'<td>{html.escape(str(display_strategy))}</td>'
-                f'<td width="70" nowrap align="right" valign="middle">{dashboard_return(return_pct, f'position-{pos.get('code', 'unknown')}', context, html_image=True)}</td>'
+                f'{dashboard_return_cell(return_pct, f"position-{pos.get('code', 'unknown')}", context)}'
                 f'<td align="right">{int(pos.get("days_held", 0))}일</td>'
                 f'<td>{html.escape(protection)}</td>'
                 f'<td>{html.escape(exit_plan)}</td>'
@@ -460,12 +469,12 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         '<table width="100%">',
         '<thead><tr>',
         '<th width="18%">신규 매수</th><th width="28%">계좌 고점 대비 낙폭</th>',
-        '<th width="70" nowrap>오늘 수익률</th><th width="18%">주문 배율</th>',
+        f'<th width="{RETURN_COLUMN_WIDTH}" nowrap align="center">오늘 수익률</th><th width="18%">주문 배율</th>',
         '<th width="18%">남은 슬롯</th>',
         '</tr></thead><tbody><tr>',
         f'<td>{"가능" if context.get("entry_allowed", False) else "중단"}</td>',
         f'<td align="right">{f"{drawdown:.2f}%" if drawdown is not None else "-"}</td>',
-        f'<td width="70" nowrap align="right" valign="middle">{dashboard_return(daily_return, "daily-return", context, html_image=True)}</td>',
+        dashboard_return_cell(daily_return, "daily-return", context),
         f'<td align="right">{float(context.get("entry_size_multiplier", 1.0))*100:.0f}%</td>',
         f'<td align="right">{max(0, MAX_POSITIONS-len(positions))}</td>',
         '</tr></tbody></table>',
@@ -487,19 +496,30 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         lines.append("| - | - | 기록 없음 | - | - |")
     lines += [
         "", "## 전체 성과", "",
-        "| 청산 거래 | 승률 | 거래가중 순수익률 | 평균 이익률 | 평균 손실률 | Profit Factor | 최대 연속 손실 | 거래가중 비용률 |",
-        "|---:|---:|---:|---:|---:|---:|---:|---:|",
-        f"| {len(all_returns)} "
-        f"| {f'{all_win_rate:.1f}%' if all_win_rate is not None else '-'} "
-        f"| {dashboard_return(aggregate_net_return, 'aggregate-return', context)} "
-        f"| {dashboard_return(average_win, 'average-win', context)} "
-        f"| {dashboard_return(average_loss, 'average-loss', context)} "
-        f"| {f'{profit_factor:.2f}' if profit_factor is not None else '-'} "
-        f"| {max_loss_streak}회 "
-        f"| {f'{aggregate_cost_rate:.2f}%' if aggregate_cost_rate is not None else '-'} |",
+        '<table width="100%">',
+        '<thead><tr>',
+        '<th>청산 거래</th><th>승률</th>',
+        f'<th width="{RETURN_COLUMN_WIDTH}" nowrap align="center">거래가중 순수익률</th>',
+        f'<th width="{RETURN_COLUMN_WIDTH}" nowrap align="center">평균 이익률</th>',
+        f'<th width="{RETURN_COLUMN_WIDTH}" nowrap align="center">평균 손실률</th>',
+        '<th>Profit Factor</th><th>최대 연속 손실</th><th>거래가중 비용률</th>',
+        '</tr></thead><tbody><tr>',
+        f'<td align="center">{len(all_returns)}</td>',
+        f'<td align="center">{f"{all_win_rate:.1f}%" if all_win_rate is not None else "-"}</td>',
+        dashboard_return_cell(aggregate_net_return, 'aggregate-return', context),
+        dashboard_return_cell(average_win, 'average-win', context),
+        dashboard_return_cell(average_loss, 'average-loss', context),
+        f'<td align="center">{f"{profit_factor:.2f}" if profit_factor is not None else "-"}</td>',
+        f'<td align="center">{max_loss_streak}회</td>',
+        f'<td align="center">{f"{aggregate_cost_rate:.2f}%" if aggregate_cost_rate is not None else "-"}</td>',
+        '</tr></tbody></table>',
         "", "## 최근 청산 내역", "",
-        "| 진입일 | 청산일 | 종목 | 전략 | 보유 기간 | 순수익률 | 청산 사유 |",
-        "|---|---|---|---|---:|---:|---|",
+        '<table width="100%">',
+        '<thead><tr>',
+        '<th>진입일</th><th>청산일</th><th>종목</th><th>전략</th><th>보유 기간</th>',
+        f'<th width="{RETURN_COLUMN_WIDTH}" nowrap align="center">순수익률</th>',
+        '<th>청산 사유</th>',
+        '</tr></thead><tbody>',
     ]
     recent_sells = sorted(
         all_sells, key=lambda trade: str(trade.get("timestamp", "")), reverse=True
@@ -518,17 +538,22 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             if matching_buys:
                 entry_date = str(matching_buys[-1].get("timestamp", ""))[:10]
         holding_days = trade.get("days_held")
-        lines.append(
-            f"| {_md(str(entry_date or '-'))} "
-            f"| {_md(exit_timestamp[:10] or '-')} "
-            f"| {_md(trade.get('name') or trade.get('code') or '-')} "
-            f"| {_md(trade.get('strategy') or '-')} "
-            f"| {f'{int(holding_days)}일' if holding_days is not None else '-'} "
-            f"| {dashboard_return(trade.get('net_return_pct'), f'closed-{index}', context)} "
-            f"| {_md(trade.get('reason') or '-')} |"
-        )
+        lines.extend([
+            '<tr>',
+            f'<td>{html.escape(str(entry_date or "-"))}</td>',
+            f'<td>{html.escape(exit_timestamp[:10] or "-")}</td>',
+            f'<td>{html.escape(str(trade.get("name") or trade.get("code") or "-"))}</td>',
+            f'<td>{html.escape(str(trade.get("strategy") or "-"))}</td>',
+            f'<td align="center">{f"{int(holding_days)}일" if holding_days is not None else "-"}</td>',
+            dashboard_return_cell(
+                trade.get('net_return_pct'), f'closed-{index}', context
+            ),
+            f'<td>{html.escape(str(trade.get("reason") or "-"))}</td>',
+            '</tr>',
+        ])
     if not recent_sells:
-        lines.append("| - | - | 청산 기록 없음 | - | - | - | - |")
+        lines.append('<tr><td colspan="7" align="center">청산 기록 없음</td></tr>')
+    lines.append('</tbody></table>')
     lines = order_dashboard_sections(lines, [
         "현재 상태",
         "전략별 현재 판단",
