@@ -5,6 +5,8 @@ from config import (
     UNFAVORABLE_VBO_VOLUME_MULTIPLIER,
     UNFAVORABLE_VBO_RELATIVE_STRENGTH_PCT,
     UNFAVORABLE_VBO_MAX_MARKET_DROP_PCT,
+    UNFAVORABLE_VBO_MAX_DAY_RETURN_PCT,
+    UNFAVORABLE_VBO_MAX_BREAKOUT_CHASE_PCT,
     UNFAVORABLE_VBO_SIZE_MULTIPLIER,
     ATR_PERIOD, ATR_STOP_MULTIPLIER, MIN_STOP_LOSS_PCT, MAX_STOP_LOSS_PCT,
     MIN_RISK_REWARD_RATIO, STOP_LOSS_PCT, TAKE_PROFIT_PCT
@@ -139,7 +141,11 @@ def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0,
                 market_day_return_pct = (
                     market_candles[-1]["close"] - market_prev_close
                 ) / market_prev_close
-        strong_unfavorable_vbo = (
+        breakout_chase_pct = (
+            (curr["close"] - target_price) / target_price
+            if target_price > 0 else 0.0
+        )
+        strong_unfavorable_vbo_base = (
             not favorable_market
             and (curr["close"] >= target_price)
             and (curr["close"] > curr["open"])
@@ -151,6 +157,11 @@ def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0,
             and day_return_pct - market_day_return_pct
                 >= UNFAVORABLE_VBO_RELATIVE_STRENGTH_PCT
             and price_quality_ok
+        )
+        strong_unfavorable_vbo = (
+            strong_unfavorable_vbo_base
+            and day_return_pct <= UNFAVORABLE_VBO_MAX_DAY_RETURN_PCT
+            and breakout_chase_pct <= UNFAVORABLE_VBO_MAX_BREAKOUT_CHASE_PCT
         )
 
         if diagnostics is not None:
@@ -169,6 +180,23 @@ def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0,
 
             if strong_unfavorable_vbo:
                 vbo_blocker = "강한 비우호장 예외 충족"
+            elif (
+                strong_unfavorable_vbo_base
+                and day_return_pct > UNFAVORABLE_VBO_MAX_DAY_RETURN_PCT
+            ):
+                vbo_blocker = (
+                    f"비우호장 당일 상승률 {day_return_pct*100:.1f}%>"
+                    f"{UNFAVORABLE_VBO_MAX_DAY_RETURN_PCT*100:.0f}%"
+                )
+            elif (
+                strong_unfavorable_vbo_base
+                and breakout_chase_pct
+                    > UNFAVORABLE_VBO_MAX_BREAKOUT_CHASE_PCT
+            ):
+                vbo_blocker = (
+                    f"돌파가 추격 {breakout_chase_pct*100:.1f}%>"
+                    f"{UNFAVORABLE_VBO_MAX_BREAKOUT_CHASE_PCT*100:.0f}%"
+                )
             elif not favorable_market:
                 vbo_blocker = "시장 비우호"
             elif curr["close"] < target_price:

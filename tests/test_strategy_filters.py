@@ -81,6 +81,38 @@ class StrategyFilterTests(unittest.TestCase):
         self.assertEqual(signals[0]["strategy"], "비우호장 강한 VBO (15%)")
         self.assertAlmostEqual(signals[0]["size_multiplier"], 0.15 / 0.35)
 
+    def test_unfavorable_vbo_blocks_late_breakout_chasing(self):
+        candles = [candle(100 + i * 0.2, vol=1000) for i in range(29)]
+        prev = candles[-1]
+        target = 106.0 + (prev["high"] - prev["low"]) * 0.5
+        candles.append(candle(target * 1.021, open_price=106.0,
+                              high=target * 1.022, low=105.8, vol=2200))
+        falling = [candle(200 - i) for i in range(70)]
+        diagnostics = {}
+
+        signals = evaluate_signals(
+            {"늦은돌파주": candles}, falling, diagnostics=diagnostics
+        )
+
+        self.assertEqual(signals, [])
+        self.assertIn("돌파가 추격", diagnostics["늦은돌파주"]["vbo_blocker"])
+
+    def test_unfavorable_vbo_blocks_more_than_six_percent_day_gain(self):
+        candles = [candle(100 + i * 0.2, vol=1000) for i in range(29)]
+        prev = candles[-1]
+        target = 106.0 + (prev["high"] - prev["low"]) * 0.5
+        candles.append(candle(prev["close"] * 1.061, open_price=106.0,
+                              high=prev["close"] * 1.062, low=105.8, vol=2200))
+        falling = [candle(200 - i) for i in range(70)]
+        diagnostics = {}
+
+        signals = evaluate_signals(
+            {"급등주": candles}, falling, diagnostics=diagnostics
+        )
+
+        self.assertEqual(signals, [])
+        self.assertIn("당일 상승률", diagnostics["급등주"]["vbo_blocker"])
+
     def test_signal_diagnostics_explains_both_entry_paths(self):
         candles = [candle(100 + i, vol=1000) for i in range(30)]
         falling = [candle(200 - i) for i in range(70)]
