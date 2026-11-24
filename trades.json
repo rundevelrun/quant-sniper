@@ -64,5 +64,17 @@
     "take_profit_pct": 0.08,
     "strategy": "RSI 과매도 반등",
     "roundtrip_cost_pct": 0.0040999999999999995
+  },
+  {
+    "timestamp": "2026-11-24 10:14:22",
+    "type": "BUY",
+    "name": "와이씨",
+    "code": "232140",
+    "shares": 1,
+    "entry_price": 16590.0,
+    "stop_loss_pct": 0.04,
+    "take_profit_pct": 0.08,
+    "strategy": "비우호장 강한 VBO (15%)",
+    "roundtrip_cost_pct": 0.0040999999999999995
   }
 ]
