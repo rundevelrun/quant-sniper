@@ -76,5 +76,23 @@
     "take_profit_pct": 0.08,
     "strategy": "비우호장 강한 VBO (15%)",
     "roundtrip_cost_pct": 0.0040999999999999995
+  },
+  {
+    "timestamp": "2026-11-24 12:13:08",
+    "type": "SELL",
+    "name": "씨어스",
+    "code": "458870",
+    "shares": 2,
+    "entry_price": 14740.0,
+    "exit_price": 14140.0,
+    "price_source": "broker_execution",
+    "gross_return_pct": -4.07,
+    "net_return_pct": -4.46,
+    "cost_fee_krw": 116.0,
+    "net_profit_krw": -1316.0,
+    "reason": "동적 손절 (-4.0% ATR 보정)",
+    "strategy": "RSI 과매도 반등",
+    "entry_date": "2026-11-24",
+    "days_held": 1
   }
 ]
