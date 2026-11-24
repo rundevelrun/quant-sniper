@@ -32,6 +32,7 @@ from config import (
     ETF_ROTATION_ASSETS, ETF_ROTATION_SHORT_MOMENTUM_DAYS,
     ETF_ROTATION_LONG_MOMENTUM_DAYS, ETF_ROTATION_SWITCH_MARGIN,
     ETF_ROTATION_ALLOC_PCT, ETF_ROTATION_STOP_LOSS_PCT,
+    ETF_MAX_ADVERSE_ENTRY_GAP_PCT,
     ETF_ROTATION_TRAILING_TRIGGER, ETF_ROTATION_TRAILING_GAP,
     SECTOR_ETF_ENABLED, SECTOR_ETF_ASSETS, SECTOR_ETF_MA_PERIOD,
     SECTOR_ETF_SLOPE_DAYS, SECTOR_ETF_BAND_PCT,
@@ -405,6 +406,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         rotation_status = (
             "보유 중" if rotation.get("held")
             else "당일 재진입 제한" if rotation.get("traded_today")
+            else "역방향 갭 회복 대기" if rotation.get("entry_gap_blocked")
             else "매수 불가" if rotation.get("regime") == "asset"
             and rotation_trade and not rotation_trade.get("eligible")
             else "진입 감시" if rotation.get("regime") != "cash"
@@ -425,6 +427,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         sector_status = (
             "보유 중" if sector_rotation.get("held")
             else "당일 재진입 제한" if sector_rotation.get("traded_today")
+            else "역방향 갭 회복 대기" if sector_rotation.get("entry_gap_blocked")
             else "매수 불가" if sector_rotation.get("regime") == "asset"
             and sector_trade and not sector_trade.get("eligible")
             else "진입 감시" if sector_rotation.get("regime") == "asset"
@@ -1282,6 +1285,17 @@ def etf_rotation_regime(candles, now=None):
         "reason": "60일선 ±1%와 5거래일 기울기",
     }
 
+
+def etf_entry_gap_status(previous_close, current_price,
+                         max_adverse_gap_pct=ETF_MAX_ADVERSE_ENTRY_GAP_PCT):
+    """전일 종가 대비 ETF 가격이 허용 역방향 갭 안으로 회복했는지 판단한다."""
+    previous_close = float(previous_close or 0)
+    current_price = float(current_price or 0)
+    if previous_close <= 0 or current_price <= 0:
+        return False, None
+    gap_pct = current_price / previous_close - 1
+    return gap_pct + 1e-12 >= -max_adverse_gap_pct, gap_pct
+
 def multi_asset_trend_selection(candles_by_code, held_code=None, now=None):
     """전일 확정 일봉만으로 상승 추세 자산 중 모멘텀이 가장 강한 ETF를 고른다."""
     now = now or datetime.datetime.now()
@@ -2066,14 +2080,30 @@ def run_trading_loop():
             rotation_position = existing_rotation_position
             rotation_blocked_today = etf_rotation_traded_today(trades, today_str)
             dashboard_context["etf_rotation"]["traded_today"] = rotation_blocked_today
+            rotation_quote = (
+                realtime.quote(rotation_target_code) if rotation_target_code else None
+            )
+            rotation_gap_allowed, rotation_gap_pct = etf_entry_gap_status(
+                rotation_detail.get("previous_close"),
+                rotation_quote.get("price") if rotation_quote else None,
+            )
+            dashboard_context["etf_rotation"].update({
+                "entry_gap_pct": (
+                    round(rotation_gap_pct * 100, 2)
+                    if rotation_gap_pct is not None else None
+                ),
+                "entry_gap_blocked": bool(
+                    rotation_target_code and not rotation_gap_allowed
+                ),
+            })
             if (
                 ETF_ROTATION_ENABLED and rotation_target_code
                 and not rotation_position and not rotation_blocked_today
+                and rotation_gap_allowed
                 and etf_tradeability_by_code.get(
                     rotation_target_code, {}
                 ).get("eligible", False)
             ):
-                rotation_quote = realtime.quote(rotation_target_code)
                 if rotation_quote:
                     raw_signals.append({
                         "name": ETF_ROTATION_NAMES[rotation_target_code],
@@ -2092,14 +2122,30 @@ def run_trading_loop():
             sector_position = existing_sector_position
             sector_blocked_today = sector_etf_traded_today(trades, today_str)
             dashboard_context["sector_etf"]["traded_today"] = sector_blocked_today
+            sector_quote = (
+                realtime.quote(sector_target_code) if sector_target_code else None
+            )
+            sector_gap_allowed, sector_gap_pct = etf_entry_gap_status(
+                sector_detail.get("previous_close"),
+                sector_quote.get("price") if sector_quote else None,
+            )
+            dashboard_context["sector_etf"].update({
+                "entry_gap_pct": (
+                    round(sector_gap_pct * 100, 2)
+                    if sector_gap_pct is not None else None
+                ),
+                "entry_gap_blocked": bool(
+                    sector_target_code and not sector_gap_allowed
+                ),
+            })
             if (
                 SECTOR_ETF_ENABLED and sector_target_code
                 and not sector_position and not sector_blocked_today
+                and sector_gap_allowed
                 and etf_tradeability_by_code.get(
                     sector_target_code, {}
                 ).get("eligible", False)
             ):
-                sector_quote = realtime.quote(sector_target_code)
                 if sector_quote:
                     raw_signals.append({
                         "name": SECTOR_ETF_NAMES[sector_target_code],

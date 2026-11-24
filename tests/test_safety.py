@@ -17,6 +17,7 @@ from bot import (
     is_market_open, is_mim_entry_window, market_session_progress,
     mim_long_signal, save_json, trading_days_held, update_mim_state,
     etf_rotation_regime, etf_rotation_traded_today,
+    etf_entry_gap_status,
     multi_asset_trend_selection, sector_etf_trend_selection,
     sector_etf_traded_today,
     estimate_external_cash_flow, sector_limit_reached, time_stop_reason,
@@ -644,6 +645,14 @@ class SafetyTests(unittest.TestCase):
         }]
         self.assertTrue(etf_rotation_traded_today(trades, "2026-11-20"))
         self.assertFalse(etf_rotation_traded_today(trades, "2026-11-21"))
+
+    def test_etf_entry_waits_for_three_percent_adverse_gap_recovery(self):
+        allowed, gap = etf_entry_gap_status(1427, 1340)
+        self.assertFalse(allowed)
+        self.assertAlmostEqual(gap, 1340 / 1427 - 1)
+        self.assertTrue(etf_entry_gap_status(1427, 1385)[0])
+        self.assertTrue(etf_entry_gap_status(100, 97)[0])
+        self.assertFalse(etf_entry_gap_status(100, 96.99)[0])
 
     def test_multi_asset_trend_selects_strongest_eligible_asset(self):
         start = datetime.date(2026, 5, 1)
