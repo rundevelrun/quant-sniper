@@ -27,6 +27,8 @@ from bot import (
     restore_daily_account_metrics, restore_position_last_prices,
     update_dashboard_events, update_position_stop,
     render_dashboard, return_pct_svg,
+    build_dashboard_state, update_cumulative_account_metrics,
+    preserve_cumulative_risk_fields,
 )
 from kiwoom_api import (
     KiwoomRestAPI, _market_name, _mixed_universe_candidates,
@@ -541,6 +543,119 @@ class SafetyTests(unittest.TestCase):
         self.assertTrue(changed)
         self.assertAlmostEqual(metrics["daily_return_pct"], 1.0)
         self.assertEqual(risk_state["daily_return_pct"], 1.0)
+
+    def test_cumulative_return_dilutes_on_deposit_but_twr_holds(self):
+        risk_state = {}
+        metrics = update_cumulative_account_metrics(
+            risk_state, 304780, realized_net_profit=4780
+        )
+        self.assertEqual(risk_state["total_net_capital"], 300000)
+        self.assertAlmostEqual(metrics["cumulative_return_pct"], 1.5933, places=3)
+        self.assertAlmostEqual(metrics["twr_return_pct"], 1.5933, places=3)
+
+        diluted = update_cumulative_account_metrics(
+            risk_state, 404780, external_flow=100000
+        )
+        self.assertEqual(risk_state["total_net_capital"], 400000)
+        self.assertAlmostEqual(diluted["cumulative_return_pct"], 1.195, places=3)
+        self.assertAlmostEqual(diluted["twr_return_pct"], 1.5933, places=3)
+
+        after_gain = update_cumulative_account_metrics(risk_state, 408826.78)
+        self.assertAlmostEqual(after_gain["twr_return_pct"], 2.6093, places=3)
+
+    def test_cumulative_fields_survive_daily_risk_reset(self):
+        risk_state = {
+            "date": "2026-11-20", "opening_assets": 300000,
+            "total_net_capital": 400000, "twr_factor": 1.0159,
+            "twr_period_start_assets": 404780,
+            "cumulative_return_pct": 1.195, "twr_return_pct": 1.5933,
+            "daily_return_pct": 0.5, "halted": True,
+        }
+        reset_state = {
+            **preserve_cumulative_risk_fields(risk_state),
+            "date": "2026-11-21", "opening_assets": 405000,
+            "peak_assets": 405000, "halted": False,
+            "account_baseline": {"total_assets": 405000, "positions": {}},
+        }
+        self.assertEqual(reset_state["total_net_capital"], 400000)
+        self.assertEqual(reset_state["twr_factor"], 1.0159)
+        self.assertEqual(reset_state["twr_period_start_assets"], 404780)
+        self.assertNotIn("daily_return_pct", reset_state)
+        self.assertFalse(reset_state["halted"])
+
+        metrics = update_cumulative_account_metrics(reset_state, 405000)
+        self.assertAlmostEqual(metrics["cumulative_return_pct"], 1.25, places=3)
+        self.assertAlmostEqual(metrics["twr_return_pct"], 1.6452, places=3)
+
+    def test_daily_restore_returns_cumulative_metrics(self):
+        class Api:
+            def get_account_snapshot(self):
+                return {"ok": True, "total_assets": 314000,
+                        "positions": {"000001": {
+                            "shares": 1, "current_price": 14000,
+                        }}}
+        risk_state = {
+            "date": "2026-11-20", "opening_assets": 300000,
+            "peak_assets": 314000,
+            "account_baseline": {
+                "total_assets": 300000,
+                "positions": {"000001": {
+                    "shares": 1, "current_price": 12000,
+                }},
+            },
+        }
+        with patch("bot.load_json", return_value=[
+            {"type": "SELL", "net_profit_krw": 14000}
+        ]):
+            metrics, changed = restore_daily_account_metrics(
+                Api(), risk_state, "2026-11-20"
+            )
+        self.assertTrue(changed)
+        self.assertEqual(risk_state["total_net_capital"], 300000)
+        self.assertAlmostEqual(metrics["cumulative_return_pct"], 4.6667, places=3)
+        self.assertAlmostEqual(metrics["twr_return_pct"], 4.6667, places=3)
+
+    def test_dashboard_shows_cumulative_and_twr_without_amounts(self):
+        class Feed:
+            def quote(self, code):
+                return None
+            def is_healthy(self):
+                return True, ""
+        context = {
+            "svg_returns": True,
+            "daily_return_pct": 0.52,
+            "cumulative_return_pct": 1.59,
+            "twr_return_pct": 1.83,
+            "account_drawdown_pct": 0.0,
+            "total_net_capital": 300000,
+        }
+        markdown = render_dashboard(
+            "running", "정규 감시 중", {}, Feed(), [], context=context
+        )
+        safeguards = markdown.split("## 계좌 안전장치", 1)[1].split("## ", 1)[0]
+        self.assertIn(
+            '<th width="76" nowrap align="center">누적 수익률</th>', safeguards
+        )
+        self.assertIn(
+            '<th width="76" nowrap align="center">전략 수익률 (TWR)</th>', safeguards
+        )
+        self.assertIn('src="svg/cumulative-return-v5-p1_59.svg"', safeguards)
+        self.assertIn('src="svg/twr-return-v5-p1_83.svg"', safeguards)
+        self.assertIn(
+            '<td width="76" nowrap align="center" valign="middle">', safeguards
+        )
+        self.assertNotIn("300,000", safeguards)
+        self.assertNotIn("300000", safeguards)
+
+        state = build_dashboard_state(
+            "running", "정규 감시 중", {}, Feed(), context
+        )
+        self.assertEqual(state["cumulative_return_pct"], 1.59)
+        self.assertEqual(state["twr_return_pct"], 1.83)
+        serialized = json.dumps(state, ensure_ascii=False)
+        self.assertNotIn("300,000", serialized)
+        self.assertNotIn("300000", serialized)
+        self.assertNotIn("total_net_capital", serialized)
 
     def test_profitable_position_gets_extended_time_stop(self):
         losing = {"buy_price": 10000, "days_held": 7, "trailing_active": False}

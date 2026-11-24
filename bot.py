@@ -491,17 +491,24 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         lines.append("| 감시 종목 없음 | - | - | - | - | - |")
     drawdown = context.get("account_drawdown_pct")
     daily_return = context.get("daily_return_pct")
+    cumulative_return = context.get("cumulative_return_pct")
+    twr_return = context.get("twr_return_pct")
     lines += [
         "", "## 계좌 안전장치", "",
         '<table width="100%">',
         '<thead><tr>',
-        '<th width="18%">신규 매수</th><th width="28%">계좌 고점 대비 낙폭</th>',
-        f'<th width="{RETURN_COLUMN_WIDTH}" nowrap align="center">오늘 수익률</th><th width="18%">주문 배율</th>',
-        '<th width="18%">남은 슬롯</th>',
+        '<th width="14%">신규 매수</th><th width="24%">계좌 고점 대비 낙폭</th>',
+        f'<th width="{RETURN_COLUMN_WIDTH}" nowrap align="center">오늘 수익률</th>',
+        f'<th width="{RETURN_COLUMN_WIDTH}" nowrap align="center">누적 수익률</th>',
+        f'<th width="{RETURN_COLUMN_WIDTH}" nowrap align="center">전략 수익률 (TWR)</th>',
+        '<th width="14%">주문 배율</th>',
+        '<th width="14%">남은 슬롯</th>',
         '</tr></thead><tbody><tr>',
         f'<td>{"가능" if context.get("entry_allowed", False) else "중단"}</td>',
         f'<td align="right">{f"{drawdown:.2f}%" if drawdown is not None else "-"}</td>',
         dashboard_return_cell(daily_return, "daily-return", context),
+        dashboard_return_cell(cumulative_return, "cumulative-return", context),
+        dashboard_return_cell(twr_return, "twr-return", context),
         f'<td align="right">{float(context.get("entry_size_multiplier", 1.0))*100:.0f}%</td>',
         f'<td align="right">{max(0, MAX_POSITIONS-len(positions))}</td>',
         '</tr></tbody></table>',
@@ -594,15 +601,9 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     lines += ["", "> 계좌 잔액·원화 손익 등 민감한 계좌정보는 공개하지 않습니다.", ""]
     return "\n".join(lines)
 
-def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
-    """대시보드 파일만 부모 없는 단일 커밋으로 origin/dashboard에 교체한다."""
-    if not AUTO_GIT_PUSH:
-        return False
-    events = load_json(DASHBOARD_EVENTS_FILE, [])
-    render_context = dict(context or {})
-    render_context["all_trades"] = load_json(TRADES_FILE, [])
-    render_context["svg_returns"] = True
-    now = datetime.datetime.now()
+def build_dashboard_state(status, detail, positions, realtime, render_context, now=None):
+    """공개 dashboard_state.json 스냅샷을 만든다(금액은 담지 않고 퍼센트만 둔다)."""
+    now = now or datetime.datetime.now()
     realtime_ok, realtime_error = realtime.is_healthy()
     state_positions = []
     for name, pos in positions.items():
@@ -622,7 +623,7 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
             "trailing_active": bool(pos.get("trailing_active", False)),
             "days_held": int(pos.get("days_held", 0)),
         })
-    dashboard_state = {
+    return {
         "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
         "status": status,
         "detail": detail,
@@ -638,6 +639,8 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
         "entry_allowed": bool(render_context.get("entry_allowed", False)),
         "account_drawdown_pct": render_context.get("account_drawdown_pct"),
         "daily_return_pct": render_context.get("daily_return_pct"),
+        "cumulative_return_pct": render_context.get("cumulative_return_pct"),
+        "twr_return_pct": render_context.get("twr_return_pct"),
         "entry_size_multiplier": render_context.get("entry_size_multiplier", 1.0),
         "last_external_flow": render_context.get("last_external_flow"),
         "universe_date": render_context.get("universe_date"),
@@ -656,6 +659,19 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
         "etf_rotation": render_context.get("etf_rotation", {}),
         "sector_etf": render_context.get("sector_etf", {}),
     }
+
+def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
+    """대시보드 파일만 부모 없는 단일 커밋으로 origin/dashboard에 교체한다."""
+    if not AUTO_GIT_PUSH:
+        return False
+    events = load_json(DASHBOARD_EVENTS_FILE, [])
+    render_context = dict(context or {})
+    render_context["all_trades"] = load_json(TRADES_FILE, [])
+    render_context["svg_returns"] = True
+    now = datetime.datetime.now()
+    dashboard_state = build_dashboard_state(
+        status, detail, positions, realtime, render_context, now
+    )
     save_json(DASHBOARD_STATE_FILE, dashboard_state)
     dashboard = render_dashboard(
         status, detail, positions, realtime, events, context=render_context
@@ -900,6 +916,123 @@ def estimate_external_cash_flow(previous_snapshot, account):
     noise_threshold = max(1000.0, previous_assets * 0.005)
     return unexplained_change if abs(unexplained_change) >= noise_threshold else 0.0
 
+CUMULATIVE_RISK_FIELDS = (
+    "total_net_capital", "twr_factor", "twr_period_start_assets",
+    "cumulative_return_pct", "twr_return_pct",
+)
+
+def preserve_cumulative_risk_fields(risk_state):
+    """자정 초기화 때 누적 수익률·TWR 기준값이 날아가지 않도록 보존본을 만든다."""
+    return {
+        key: risk_state.get(key) for key in CUMULATIVE_RISK_FIELDS
+        if risk_state.get(key) is not None
+    }
+
+def realized_net_profit_total(trades):
+    """trades.json에 확정된 청산 손익 합계를 구한다."""
+    return sum(
+        float(trade.get("net_profit_krw") or 0)
+        for trade in trades or []
+        if trade.get("type") == "SELL"
+    )
+
+def initialize_cumulative_metrics(risk_state, current_assets, realized_net_profit=0.0):
+    """누적 원금과 TWR 계수를 최초 1회 초기화한다.
+
+    기존 청산 손익은 이미 계좌에 반영돼 있으므로 원금에서 빼 두어야
+    첫날부터의 수익률이 그대로 이어진다.
+    """
+    current_assets = float(current_assets or 0)
+    if current_assets <= 0:
+        return False
+    changed = False
+    total_net_capital = float(risk_state.get("total_net_capital") or 0)
+    if total_net_capital <= 0:
+        total_net_capital = max(0.0, current_assets - float(realized_net_profit or 0))
+        if total_net_capital <= 0:
+            total_net_capital = current_assets
+        risk_state["total_net_capital"] = total_net_capital
+        changed = True
+    period_start = float(risk_state.get("twr_period_start_assets") or 0)
+    if period_start <= 0:
+        risk_state["twr_period_start_assets"] = current_assets
+        period_start = current_assets
+        changed = True
+    if risk_state.get("twr_factor") is None:
+        risk_state["twr_factor"] = (
+            period_start / total_net_capital if total_net_capital > 0 else 1.0
+        )
+        changed = True
+    return changed
+
+def apply_external_flow_to_metrics(risk_state, current_assets, external_flow):
+    """외부 입출금만큼 원금을 보정하고 TWR 구간을 새로 연다."""
+    flow = float(external_flow or 0)
+    if not flow:
+        return False
+    current_assets = float(current_assets or 0)
+    total_net_capital = float(risk_state.get("total_net_capital") or 0)
+    if total_net_capital <= 0:
+        total_net_capital = max(0.0, current_assets - flow)
+        if total_net_capital <= 0:
+            total_net_capital = current_assets
+    else:
+        total_net_capital = max(0.0, total_net_capital + flow)
+    risk_state["total_net_capital"] = total_net_capital
+    period_start = float(risk_state.get("twr_period_start_assets") or 0)
+    saved_factor = risk_state.get("twr_factor")
+    factor = float(saved_factor) if saved_factor is not None else 1.0
+    # 입출금 직전까지의 구간 수익률을 확정한 뒤 새 구간을 연다.
+    if period_start > 0:
+        factor *= (current_assets - flow) / period_start
+    risk_state["twr_factor"] = factor
+    risk_state["twr_period_start_assets"] = current_assets
+    return True
+
+def calculate_cumulative_return_pct(current_assets, total_net_capital):
+    """총원금 대비 누적 수익률을 계산한다."""
+    total_net_capital = float(total_net_capital or 0)
+    if total_net_capital <= 0:
+        return None
+    return (float(current_assets or 0) - total_net_capital) / total_net_capital * 100
+
+def calculate_twr_return_pct(twr_factor, period_start_assets, current_assets):
+    """입출금 영향을 제거한 전략 수익률(TWR)을 계산한다."""
+    period_start_assets = float(period_start_assets or 0)
+    if period_start_assets <= 0:
+        return None
+    factor = float(twr_factor) if twr_factor is not None else 1.0
+    return (factor * (float(current_assets or 0) / period_start_assets) - 1.0) * 100
+
+def update_cumulative_account_metrics(risk_state, current_assets, realized_net_profit=0.0,
+                                      external_flow=0.0):
+    """누적 수익률과 TWR을 갱신해 risk_state에 남기고 대시보드용 값을 돌려준다."""
+    current_assets = float(current_assets or 0)
+    if current_assets <= 0:
+        return {}
+    # 원금을 이번에 새로 잡았다면 그 기준액이 이미 입출금을 반영한 평가액이므로
+    # 같은 호출에서 감지된 입출금을 다시 더하지 않는다.
+    had_capital = float(risk_state.get("total_net_capital") or 0) > 0
+    initialize_cumulative_metrics(risk_state, current_assets, realized_net_profit)
+    if external_flow and had_capital:
+        apply_external_flow_to_metrics(risk_state, current_assets, external_flow)
+    cumulative = calculate_cumulative_return_pct(
+        current_assets, risk_state.get("total_net_capital")
+    )
+    twr = calculate_twr_return_pct(
+        risk_state.get("twr_factor"),
+        risk_state.get("twr_period_start_assets"),
+        current_assets,
+    )
+    risk_state["cumulative_return_pct"] = (
+        round(cumulative, 4) if cumulative is not None else None
+    )
+    risk_state["twr_return_pct"] = round(twr, 4) if twr is not None else None
+    return {
+        "cumulative_return_pct": risk_state["cumulative_return_pct"],
+        "twr_return_pct": risk_state["twr_return_pct"],
+    }
+
 def restore_daily_account_metrics(api, risk_state, today_str):
     """장 마감 후 오늘 수익률을 저장값에서 읽거나 키움 계좌로 한 번 복원한다."""
     if risk_state.get("date") != today_str:
@@ -909,13 +1042,18 @@ def restore_daily_account_metrics(api, risk_state, today_str):
         return {}, False
     saved_return = risk_state.get("daily_return_pct")
     saved_drawdown = risk_state.get("account_drawdown_pct")
-    if saved_return is not None and saved_drawdown is not None:
+    saved_cumulative = risk_state.get("cumulative_return_pct")
+    saved_twr = risk_state.get("twr_return_pct")
+    if (saved_return is not None and saved_drawdown is not None
+            and saved_cumulative is not None and saved_twr is not None):
         return {
             "daily_return_pct": float(saved_return),
             "account_drawdown_pct": float(saved_drawdown),
             "entry_size_multiplier": float(
                 risk_state.get("entry_size_multiplier", 1.0)
             ),
+            "cumulative_return_pct": float(saved_cumulative),
+            "twr_return_pct": float(saved_twr),
         }, False
 
     account = api.get_account_snapshot()
@@ -935,6 +1073,11 @@ def restore_daily_account_metrics(api, risk_state, today_str):
         (current_assets - opening_assets) / opening_assets * 100
         if opening_assets > 0 else 0.0
     )
+    cumulative_metrics = update_cumulative_account_metrics(
+        risk_state, current_assets,
+        realized_net_profit_total(load_json(TRADES_FILE, [])),
+        external_flow=external_flow,
+    )
     risk_state.update({
         "opening_assets": opening_assets,
         "peak_assets": peak_assets,
@@ -947,6 +1090,7 @@ def restore_daily_account_metrics(api, risk_state, today_str):
         "daily_return_pct": daily_return_pct,
         "account_drawdown_pct": drawdown * 100,
         "entry_size_multiplier": multiplier,
+        **cumulative_metrics,
     }, True
 
 def time_stop_reason(pos, current_price):
@@ -1775,7 +1919,9 @@ def run_trading_loop():
                 else:
                     opening_assets = account.get("total_assets") or None
                     trading_halted = False
+                    # 누적 원금·TWR 기준값은 자정 초기화 뒤에도 이어진다.
                     risk_state = {
+                        **preserve_cumulative_risk_fields(risk_state),
                         "date": today_str, "opening_assets": opening_assets,
                         "peak_assets": peak_assets,
                         "halted": False,
@@ -1830,6 +1976,11 @@ def run_trading_loop():
                     (current_assets - opening_assets) / opening_assets
                     if opening_assets > 0 else 0.0
                 )
+                cumulative_metrics = update_cumulative_account_metrics(
+                    risk_state, current_assets,
+                    realized_net_profit_total(trades),
+                    external_flow=external_flow,
+                )
                 risk_state.update({
                     "daily_return_pct": daily_return * 100,
                     "account_drawdown_pct": account_drawdown * 100,
@@ -1840,6 +1991,7 @@ def run_trading_loop():
                     "account_drawdown_pct": account_drawdown * 100,
                     "daily_return_pct": daily_return * 100,
                     "entry_size_multiplier": entry_size_multiplier,
+                    **cumulative_metrics,
                 })
                 if daily_return <= -DAILY_KILL_SWITCH_PCT:
                     trading_halted = True
