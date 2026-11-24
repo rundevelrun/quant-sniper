@@ -52,5 +52,17 @@
     "take_profit_pct": 0.08,
     "strategy": "RSI 과매도 반등",
     "roundtrip_cost_pct": 0.0040999999999999995
+  },
+  {
+    "timestamp": "2026-11-24 09:37:17",
+    "type": "BUY",
+    "name": "씨어스",
+    "code": "458870",
+    "shares": 2,
+    "entry_price": 14740.0,
+    "stop_loss_pct": 0.04,
+    "take_profit_pct": 0.08,
+    "strategy": "RSI 과매도 반등",
+    "roundtrip_cost_pct": 0.0040999999999999995
   }
 ]
