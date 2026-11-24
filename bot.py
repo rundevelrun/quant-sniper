@@ -232,8 +232,13 @@ def order_dashboard_sections(lines, order):
         sections[lines[start][3:]] = lines[start:end]
     ordered = list(prefix)
     for title in order:
-        ordered.extend(sections.pop(title, []))
+        section = sections.pop(title, [])
+        if section and ordered and ordered[-1] != "":
+            ordered.append("")
+        ordered.extend(section)
     for section in sections.values():
+        if section and ordered and ordered[-1] != "":
+            ordered.append("")
         ordered.extend(section)
     return ordered
 
@@ -452,8 +457,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         )
 
     lines += [
-        "", "## 유력 감시 종목", "",
-        f"> 전체 {int(context.get('universe_count', 0))}개 중 신호 우선·RSI 오름차순 최대 10개", "",
+        "", "## 감시 종목 전체", "",
+        f"> 전체 {int(context.get('universe_count', 0))}개 · 신호 우선·RSI 오름차순", "",
         "| 종목 | 시장 | 직전 RSI | 현재 RSI | 신호 | 현재 판단 |",
         "|---|---|---:|---:|---|---|",
     ]
@@ -468,7 +473,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         ranked = sorted(universe_symbols, key=lambda item: (
             0 if signal_statuses.get(item.get("name"), {}).get("active") else 1,
             float(signal_diagnostics.get(item.get("name"), {}).get("previous_rsi") or 999),
-        ))[:10]
+        ))
         for item in ranked:
             signal = signal_statuses.get(item.get("name"), {})
             diagnostic = signal_diagnostics.get(item.get("name"), {})
@@ -595,7 +600,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "계좌 안전장치",
         "전체 성과",
         "최근 청산 내역",
-        "유력 감시 종목",
+        "감시 종목 전체",
         "최근 3일 중요 이벤트",
     ])
     lines += ["", "> 계좌 잔액·원화 손익 등 민감한 계좌정보는 공개하지 않습니다.", ""]

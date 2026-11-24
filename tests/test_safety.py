@@ -335,7 +335,7 @@ class SafetyTests(unittest.TestCase):
         ))
         self.assertEqual(positions["보유주"]["last_price"], 10100)
 
-    def test_dashboard_lists_top_monitored_symbols_without_sensitive_prices(self):
+    def test_dashboard_lists_all_monitored_symbols_without_sensitive_prices(self):
         class Feed:
             def quote(self, code):
                 return None
@@ -356,13 +356,31 @@ class SafetyTests(unittest.TestCase):
                 ],
             },
         )
-        self.assertIn("유력 감시 종목", markdown)
+        self.assertIn("## 감시 종목 전체", markdown)
         self.assertIn("| 후보주 | 미분류 |", markdown)
         self.assertIn("| 감시주 | 미분류 |", markdown)
         self.assertNotIn("000001", markdown)
         self.assertIn("🟢 상승 국면", markdown)
         self.assertIn("🟢 RSI 과매도 반등 (2/3)", markdown)
         self.assertIn("🔴 신호 없음", markdown)
+        self.assertIn("</table>\n\n## 감시 종목 전체", markdown)
+
+    def test_dashboard_does_not_limit_monitored_symbols_to_ten(self):
+        class Feed:
+            def quote(self, code):
+                return None
+            def is_healthy(self):
+                return True, ""
+        symbols = [
+            {"name": f"감시주{index}", "code": f"{index:06d}"}
+            for index in range(12)
+        ]
+        markdown = render_dashboard(
+            "running", "정규 감시 중", {}, Feed(), [],
+            context={"universe_count": 12, "universe_symbols": symbols},
+        )
+        for index in range(12):
+            self.assertIn(f"| 감시주{index} |", markdown)
 
     def test_dashboard_hides_system_events_but_keeps_actionable_events(self):
         class Feed:
