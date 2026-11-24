@@ -94,5 +94,23 @@
     "strategy": "RSI 과매도 반등",
     "entry_date": "2026-11-24",
     "days_held": 1
+  },
+  {
+    "timestamp": "2026-11-24 15:08:19",
+    "type": "SELL",
+    "name": "와이씨",
+    "code": "232140",
+    "shares": 1,
+    "entry_price": 16590.0,
+    "exit_price": 15910.0,
+    "price_source": "broker_execution",
+    "gross_return_pct": -4.1,
+    "net_return_pct": -4.49,
+    "cost_fee_krw": 65.0,
+    "net_profit_krw": -745.0,
+    "reason": "동적 손절 (-4.0% ATR 보정)",
+    "strategy": "비우호장 강한 VBO (15%)",
+    "entry_date": "2026-11-24",
+    "days_held": 1
   }
 ]

@@ -15,8 +15,8 @@
     "strategy": "시장 ETF 3상태 추세전환",
     "roundtrip_cost_pct": 0.0023,
     "order_exchange": "KRX",
-    "last_price": 1332.0,
-    "last_price_at": "2026-11-24 12:13:08"
+    "last_price": 1330.0,
+    "last_price_at": "2026-11-24 15:08:19"
   },
   "한화투자증권": {
     "code": "003530",
@@ -34,26 +34,7 @@
     "strategy": "RSI 과매도 반등",
     "roundtrip_cost_pct": 0.0040999999999999995,
     "order_exchange": "SOR",
-    "last_price": 3460.0,
-    "last_price_at": "2026-11-24 12:13:08"
-  },
-  "와이씨": {
-    "code": "232140",
-    "sector": "기계/장비",
-    "shares": 1,
-    "buy_price": 16590.0,
-    "stop_loss_pct": 0.04,
-    "take_profit_pct": 0.08,
-    "days_held": 1,
-    "entry_date": "2026-11-24",
-    "last_held_date": "2026-11-24",
-    "trailing_active": false,
-    "highest_price": 16660.0,
-    "trailing_gap_pct": 0.04,
-    "strategy": "비우호장 강한 VBO (15%)",
-    "roundtrip_cost_pct": 0.0040999999999999995,
-    "order_exchange": "SOR",
-    "last_price": 16150.0,
-    "last_price_at": "2026-11-24 12:13:08"
+    "last_price": 3465.0,
+    "last_price_at": "2026-11-24 15:08:19"
   }
 }
