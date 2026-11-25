@@ -101,11 +101,11 @@ ETF_ROTATION_BAND_PCT = 0.01
 ETF_ROTATION_SHORT_MOMENTUM_DAYS = 60
 ETF_ROTATION_LONG_MOMENTUM_DAYS = 120
 ETF_ROTATION_SWITCH_MARGIN = 0.02
-ETF_ROTATION_ALLOC_PCT = 0.30
+ETF_ROTATION_ALLOC_PCT = 0.50  # 백테스트(2017~2026): 30%→50%로 연 6.7%→9.9%, 낙폭 -9.6%→-14.7%
 # ETF 추세전환은 국면 전환(60일선·모멘텀)으로 청산한다. 손절은 급락 대비 재해 손절만 둔다.
 ETF_ROTATION_STOP_LOSS_PCT = 0.05
-# 재해 손절 5% × 배정 30% = 계좌 1.5%. 개별주 0.7%와 별도로 ETF 추세전환에만 적용한다.
-ETF_MAX_RISK_PER_TRADE_PCT = 0.015
+# 재해 손절 5% × 배정 50% = 계좌 2.5%. 개별주 0.7%와 별도로 ETF 추세전환에만 적용한다.
+ETF_MAX_RISK_PER_TRADE_PCT = 0.025
 ETF_MAX_ADVERSE_ENTRY_GAP_PCT = 0.03  # 전일 종가 대비 -3% 초과 역방향 갭은 회복 전 진입 금지
 SECTOR_ETF_ENABLED = False  # 다중자산 ETF와 중복되어 비활성화
 SECTOR_ETF_ASSETS = {
@@ -163,8 +163,8 @@ MAX_POSITIONS = 5              # 최대 동시 보유 종목 수
 MAX_TOTAL_EXPOSURE_PCT = 0.90  # 전체 투자금은 총자산의 90% 이내(현금 10% 유지)
 MAX_POSITIONS_PER_SECTOR = 2   # 동일 업종 동시 보유 상한
 MAX_RISK_PER_TRADE_PCT = 0.007 # 1회 거래의 계획 손실을 계좌 자산 0.7% 이내로 제한
-EQUITY_SLOWDOWN_DRAWDOWN_PCT = 0.08 # 계좌 고점 대비 -8%부터 신규 주문 크기 절반
-EQUITY_HALT_DRAWDOWN_PCT = 0.12     # 계좌 고점 대비 -12%부터 신규 매수 중단
+EQUITY_SLOWDOWN_DRAWDOWN_PCT = 0.12 # 계좌 고점 대비 -12%부터 신규 주문 크기 절반
+EQUITY_HALT_DRAWDOWN_PCT = 0.20     # 계좌 고점 대비 -20%부터 신규 매수 중단
 DAILY_KILL_SWITCH_PCT = 0.040  # 일일 계좌 누적 손실 -4.0% 도달 시 당일 올스톱
 EXCLUDE_ETFS = True             # 개별주 전략에서 ETF/레버리지/인버스 상품 제외
 

@@ -499,10 +499,14 @@ class SafetyTests(unittest.TestCase):
         peak, drawdown, multiplier, halted = account_drawdown_controls(920000, 1000000)
         self.assertEqual(peak, 1000000)
         self.assertAlmostEqual(drawdown, 0.08)
-        self.assertEqual(multiplier, 0.5)
+        self.assertEqual(multiplier, 1.0)
         self.assertFalse(halted)
         _, drawdown, multiplier, halted = account_drawdown_controls(880000, peak)
         self.assertAlmostEqual(drawdown, 0.12)
+        self.assertEqual(multiplier, 0.5)
+        self.assertFalse(halted)
+        _, drawdown, multiplier, halted = account_drawdown_controls(800000, peak)
+        self.assertAlmostEqual(drawdown, 0.20)
         self.assertEqual(multiplier, 0.5)
         self.assertTrue(halted)
         peak, drawdown, multiplier, halted = account_drawdown_controls(1100000, peak)
@@ -1211,6 +1215,15 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(shares, 9)
         # 기본(개별주) 위험 한도는 그대로 0.7%다.
         self.assertEqual(calculate_entry_shares(300000, 300000, 10000, 0.05), 4)
+
+    def test_etf_rotation_can_use_fifty_percent_allocation(self):
+        result = build_etf_tradeability(
+            {"069500": "KODEX 200"}, "다중자산 ETF", 0.50, 0.05,
+            330000, 330000, {"069500": {"price": 10000}}, risk_pct=0.025,
+        )
+        self.assertEqual(result[0]["max_shares"], 16)
+        # 개별주 기본 한도(35%)는 그대로다.
+        self.assertEqual(calculate_entry_shares(330000, 330000, 10000, 0.01), 11)
 
     def test_stock_entries_only_near_close(self):
         self.assertFalse(is_stock_entry_window(datetime.datetime(2026, 11, 26, 9, 30)))

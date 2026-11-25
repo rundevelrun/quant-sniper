@@ -1130,12 +1130,13 @@ def time_stop_reason(pos, current_price):
     return None
 
 def calculate_entry_shares(total_assets, cash, entry_price, stop_loss_pct,
-                           size_multiplier=1.0, risk_pct=None):
+                           size_multiplier=1.0, risk_pct=None, alloc_pct=None):
     """종목당 투자 한도와 거래당 계획 손실(기본 0.7%)을 모두 지키는 정수 수량을 산출한다."""
     risk_pct = MAX_RISK_PER_TRADE_PCT if risk_pct is None else risk_pct
+    alloc_pct = MAX_ALLOC_PER_STOCK if alloc_pct is None else alloc_pct
     if min(total_assets, cash, entry_price, stop_loss_pct, size_multiplier) <= 0:
         return 0
-    allocation_cap = total_assets * MAX_ALLOC_PER_STOCK * size_multiplier
+    allocation_cap = total_assets * alloc_pct * size_multiplier
     risk_budget = total_assets * risk_pct * size_multiplier
     risk_per_share = entry_price * stop_loss_pct
     shares_by_allocation = int(allocation_cap // entry_price)
@@ -1398,7 +1399,7 @@ def build_etf_tradeability(assets, strategy, allocation_pct, stop_loss_pct,
         price = float(quote.get("price") or 0)
         shares = calculate_entry_shares(
             total_assets, available_cash, price, stop_loss_pct, size_multiplier,
-            risk_pct,
+            risk_pct, max(allocation_pct, MAX_ALLOC_PER_STOCK),
         )
         allocation_shares = (
             int(total_assets * allocation_pct // price) if price > 0 else 0
@@ -2902,6 +2903,10 @@ def run_trading_loop():
                         entry_p, stop_loss_pct,
                         entry_size_multiplier * float(sig.get("size_multiplier", 1.0)),
                         sig.get("risk_pct"),
+                        max(
+                            float(sig.get("max_investment_pct") or 0),
+                            MAX_ALLOC_PER_STOCK,
+                        ),
                     )
                     shares = min(shares, int(sig.get("max_shares", shares)))
                     if sig.get("max_investment_pct") is not None:

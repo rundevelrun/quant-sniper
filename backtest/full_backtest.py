@@ -187,7 +187,7 @@ def run(etf_data, stocks, start, capital, use_stocks=True, use_parking=True):
                     shares = bot.calculate_entry_shares(
                         equity_open, bot.entry_cash_after_reserve(equity_open, cash),
                         row.Open, ETF_ROTATION_STOP_LOSS_PCT, size_mult,
-                        ETF_MAX_RISK_PER_TRADE_PCT,
+                        ETF_MAX_RISK_PER_TRADE_PCT, ETF_ROTATION_ALLOC_PCT,
                     )
                     shares = min(shares, int(equity_open * ETF_ROTATION_ALLOC_PCT // row.Open))
                     if shares >= 1:
