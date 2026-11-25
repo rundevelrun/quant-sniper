@@ -1,0 +1,7 @@
+[Unit]
+Description=Quant Sniper stale-heartbeat watchdog
+After=quant_sniper.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/niphyang/quant-sniper/watchdog.py

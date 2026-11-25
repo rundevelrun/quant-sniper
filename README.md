@@ -330,6 +330,18 @@ sudo systemctl enable --now quant_sniper
 sudo systemctl status quant_sniper
 ```
 
+프로세스 종료는 `Restart=always`가 복구합니다. 장중 프로세스가 종료되지 않은 채
+멈추는 경우까지 복구하려면 1분 주기의 heartbeat watchdog을 함께 등록합니다.
+평일 09:00~15:32 사이 `health.json`이 3분 넘게 갱신되지 않을 때만 봇을 재시작하며,
+장외·주말과 단순 Git 커밋 변경에는 반응하지 않습니다.
+
+```bash
+sudo cp quant-sniper-watchdog.service quant-sniper-watchdog.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now quant-sniper-watchdog.timer
+systemctl list-timers quant-sniper-watchdog.timer
+```
+
 ## 대시보드
 
 공개 운영 대시보드는 [`dashboard` 브랜치](https://github.com/rundevelrun/quant-sniper/tree/dashboard)에서 확인할 수 있습니다.

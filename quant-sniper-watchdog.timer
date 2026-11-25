@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Quant Sniper watchdog every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=5s
+Unit=quant-sniper-watchdog.service
+
+[Install]
+WantedBy=timers.target

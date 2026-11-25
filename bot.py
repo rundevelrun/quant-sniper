@@ -2192,6 +2192,8 @@ def run_trading_loop():
             # 장 운영 시간 확인
             if not CURRENT_MARKET_OPEN:
                 print(f"[{now_str}] 정규장 운영 시간 외입니다. 대기 중...")
+                # 휴장일에도 루프 생존 신호를 남겨 watchdog이 재시작을 반복하지 않게 한다.
+                update_health_status(status="running", detail="정규장 운영 시간 외")
                 closed_positions = load_json(POSITIONS_FILE, {})
                 if restore_position_last_prices(api, closed_positions, today_str):
                     save_json(POSITIONS_FILE, closed_positions)
