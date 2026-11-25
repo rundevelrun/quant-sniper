@@ -40,6 +40,9 @@ from config import (
     PARKING_ENABLED, PARKING_ETF_CODE, PARKING_ETF_NAME,
     PARKING_START_TIME, PARKING_END_TIME, PARKING_MIN_KRW,
     PARKING_VALUE_HAIRCUT_PCT,
+    CORE_ALLOCATION_ENABLED, CORE_ALLOCATION_PCT, CORE_TARGETS,
+    CORE_REBALANCE_START_TIME, CORE_REBALANCE_END_TIME,
+    CORE_MIN_TRADE_PCT, CORE_ONE_SHARE_TOLERANCE,
     SECTOR_ETF_ENABLED, SECTOR_ETF_ASSETS, SECTOR_ETF_MA_PERIOD,
     SECTOR_ETF_SLOPE_DAYS, SECTOR_ETF_BAND_PCT,
     SECTOR_ETF_SHORT_MOMENTUM_DAYS, SECTOR_ETF_LONG_MOMENTUM_DAYS,
@@ -65,6 +68,7 @@ DASHBOARD_EVENTS_FILE = os.path.join(BASE_DIR, "dashboard_events.json")
 DASHBOARD_STATE_FILE = os.path.join(BASE_DIR, "dashboard_state.json")
 MIM_STATE_FILE = os.path.join(BASE_DIR, "mim_state.json")
 PARKING_STATE_FILE = os.path.join(BASE_DIR, "parking_state.json")
+CORE_STATE_FILE = os.path.join(BASE_DIR, "core_state.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
 RESEARCH_DB_FILE = os.path.join(BASE_DIR, "research_data.db")
 CURRENT_MARKET_OPEN = False
@@ -423,6 +427,23 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         lines += ["", f"> WebSocket 상태: {_md(realtime_error)}"]
 
     mim_state = context.get("mim_state", {})
+    core = context.get("core") or {}
+    if core.get("enabled"):
+        lines += [
+            "", "## 코어 자산배분", "",
+            f"> 계좌의 {CORE_ALLOCATION_PCT*100:.0f}%를 고정 비중으로 보유 · 월 1회 리밸런싱"
+            f" · 최근 리밸런싱 {_md(core.get('last_rebalance_month') or '대기')}", "",
+            "| 자산 | 목표 비중 | 현재 비중 | 수익률 |",
+            "|---|---:|---:|---:|",
+        ]
+        for item in core.get("assets", []):
+            weight = item.get("weight_pct")
+            ret = item.get("return_pct")
+            lines.append(
+                f"| {_md(item.get('name'))} | {item.get('target_pct', 0):.1f}% "
+                f"| {f'{weight:.1f}%' if weight is not None else '-'} "
+                f"| {f'{ret:+.2f}%' if ret is not None else '-'} |"
+            )
     lines += [
         "", "## 전략별 현재 판단", "",
         "| 전략 | 상태 | 대상 | 판단 근거 |",
@@ -548,7 +569,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "| 시각 | 유형 | 종목 | 사유 | 반복 |",
         "|---|---|---|---|---:|",
     ]
-    visible_types = {"BUY", "SELL", "PARK", "RISK", "ERROR"}
+    visible_types = {"BUY", "SELL", "PARK", "CORE", "RISK", "ERROR"}
     visible = [e for e in recent_events if e.get("type") in visible_types]
     for event in reversed(visible[-20:]):
         lines.append(
@@ -669,6 +690,7 @@ def build_dashboard_state(status, detail, positions, realtime, render_context, n
         "entry_allowed": bool(render_context.get("entry_allowed", False)),
         "stock_entry_block_reason": render_context.get("stock_entry_block_reason"),
         "parking": render_context.get("parking"),
+        "core": render_context.get("core"),
         "account_drawdown_pct": render_context.get("account_drawdown_pct"),
         "daily_return_pct": render_context.get("daily_return_pct"),
         "cumulative_return_pct": render_context.get("cumulative_return_pct"),
@@ -1238,26 +1260,141 @@ def parking_dashboard_info(parking, price, total_assets):
         ),
     }
 
-def execute_parking_order(api, side, shares, price_hint):
-    """대기자금 ETF 시장가 주문 후 체결 수량·가격을 확인한다. ETF는 KRX로만 보낸다."""
+def execute_etf_order(api, side, code, name, shares, price_hint, reason):
+    """ETF 시장가 주문 후 체결 수량·가격을 확인한다. ETF는 KRX로만 보낸다.
+
+    반환: (체결 수량, 체결가, 오류 메시지 또는 None). 일부만 체결돼도 체결분은 반환한다.
+    """
     if side == "buy":
-        order = api.send_buy_order(
-            PARKING_ETF_CODE, PARKING_ETF_NAME, shares, price_hint, exchange="KRX",
-        )
+        order = api.send_buy_order(code, name, shares, price_hint, exchange="KRX")
     else:
         order = api.send_sell_order(
-            PARKING_ETF_CODE, PARKING_ETF_NAME, shares, price_hint,
-            "대기자금 회수", exchange="KRX",
+            code, name, shares, price_hint, reason, exchange="KRX",
         )
     if order.get("status") == "filled":
         return shares, float(price_hint), None
     if order.get("status") == "accepted":
-        fill = confirm_order_fill(api, order.get("order_id"), PARKING_ETF_CODE, shares)
+        fill = confirm_order_fill(api, order.get("order_id"), code, shares)
         filled = int(fill.get("filled_qty", 0) or 0)
         return filled, float(fill.get("fill_price") or price_hint), (
             None if filled >= shares else fill.get("error", "체결 확인 시간 초과")
         )
     return 0, 0.0, order.get("message", "알 수 없는 주문 상태")
+
+def execute_parking_order(api, side, shares, price_hint):
+    """대기자금 ETF 주문."""
+    return execute_etf_order(
+        api, side, PARKING_ETF_CODE, PARKING_ETF_NAME, shares, price_hint,
+        "대기자금 회수",
+    )
+
+# ---- 코어 자산배분(고정 비중, 월 1회 리밸런싱) ----
+def core_code_conflicts():
+    """코어 ETF가 다른 전략 종목과 겹치면 잔고 대조가 불가능하므로 겹치는 코드를 반환한다."""
+    others = set(ETF_ROTATION_ASSETS) | set(SECTOR_ETF_ASSETS) | {
+        PARKING_ETF_CODE, MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE,
+    }
+    return sorted(set(CORE_TARGETS) & others)
+
+def core_holdings(core_state):
+    return (core_state or {}).get("holdings", {})
+
+def core_shares(core_state, code):
+    return max(0, int(core_holdings(core_state).get(code, {}).get("shares", 0) or 0))
+
+def is_core_rebalance_window(now=None):
+    now = now or datetime.datetime.now()
+    start_hour, start_minute = map(int, CORE_REBALANCE_START_TIME.split(":"))
+    end_hour, end_minute = map(int, CORE_REBALANCE_END_TIME.split(":"))
+    start = now.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+    end = now.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+    return start <= now <= end
+
+def core_rebalance_due(core_state, now):
+    """이번 달에 아직 비중을 맞추지 않았으면 True(최초 실행 포함)."""
+    return (core_state or {}).get("last_rebalance_month") != now.strftime("%Y-%m")
+
+def core_desired_shares(target_value, price, current_shares, min_trade_value):
+    """목표 금액에 맞는 정수 수량. 차이가 작으면 현재 수량을 유지해 잦은 매매를 막는다."""
+    if price <= 0:
+        return current_shares
+    desired = int(target_value // price)
+    if desired == 0 and target_value > 0 and price <= target_value * CORE_ONE_SHARE_TOLERANCE:
+        desired = 1
+    if current_shares > 0 and abs(desired - current_shares) * price < min_trade_value:
+        return current_shares
+    return desired
+
+def plan_core_rebalance(total_assets, prices, core_state):
+    """코어 목표 대비 매도·매수 계획을 만든다. 매도를 먼저 실행하도록 정렬한다.
+
+    반환: [(side, code, name, shares, price)], 가격이 없는 종목이 있으면 None.
+    """
+    if total_assets <= 0:
+        return []
+    budget = total_assets * CORE_ALLOCATION_PCT
+    min_trade_value = total_assets * CORE_MIN_TRADE_PCT
+    sells, buys = [], []
+    for code, (name, weight) in CORE_TARGETS.items():
+        price = float(prices.get(code) or 0)
+        if price <= 0:
+            return None
+        current = core_shares(core_state, code)
+        desired = core_desired_shares(budget * weight, price, current, min_trade_value)
+        if desired < current:
+            sells.append(("sell", code, name, current - desired, price))
+        elif desired > current:
+            buys.append(("buy", code, name, desired - current, price))
+    # 비중이 큰 자산부터 채운다.
+    buys.sort(key=lambda item: item[3] * item[4], reverse=True)
+    return sells + buys
+
+def apply_core_fill(core_state, side, code, filled_qty, fill_price):
+    """코어 체결을 로컬 장부에 반영한다(평균단가 유지)."""
+    core_state = dict(core_state or {})
+    holdings = {k: dict(v) for k, v in core_holdings(core_state).items()}
+    if filled_qty > 0:
+        item = holdings.get(code, {})
+        shares = max(0, int(item.get("shares", 0) or 0))
+        if side == "buy":
+            avg = float(item.get("avg_price") or 0)
+            item["avg_price"] = (avg * shares + fill_price * filled_qty) / (shares + filled_qty)
+            item["shares"] = shares + filled_qty
+        else:
+            item["shares"] = max(0, shares - filled_qty)
+        item["last_price"] = fill_price
+        if item["shares"] > 0:
+            holdings[code] = item
+        else:
+            holdings.pop(code, None)
+    core_state["holdings"] = holdings
+    return core_state
+
+def core_dashboard_info(core_state, prices, total_assets):
+    """공개 대시보드용: 금액·수량 없이 목표·현재 비중과 수익률만."""
+    rows = []
+    for code, (name, weight) in CORE_TARGETS.items():
+        item = core_holdings(core_state).get(code, {})
+        shares = max(0, int(item.get("shares", 0) or 0))
+        price = float(prices.get(code) or item.get("last_price") or 0)
+        avg = float(item.get("avg_price") or 0)
+        rows.append({
+            "name": name,
+            "target_pct": round(CORE_ALLOCATION_PCT * weight * 100, 1),
+            "weight_pct": (
+                round(shares * price / total_assets * 100, 1)
+                if total_assets > 0 and price > 0 else None
+            ),
+            "return_pct": (
+                round((price - avg) / avg * 100, 2)
+                if shares > 0 and price > 0 and avg > 0 else None
+            ),
+        })
+    return {
+        "enabled": CORE_ALLOCATION_ENABLED,
+        "last_rebalance_month": (core_state or {}).get("last_rebalance_month"),
+        "assets": rows,
+    }
 
 def screening_preferred_max_price(account):
     """당일 허용 상승 후에도 비우호장 50%에서 1주 가능한 전일종가 상한."""
@@ -1808,6 +1945,14 @@ def market_session_progress(now=None):
 
 def run_trading_loop():
     global CURRENT_MARKET_OPEN
+    if CORE_ALLOCATION_ENABLED:
+        conflicts = core_code_conflicts()
+        weight_sum = sum(weight for _, weight in CORE_TARGETS.values())
+        if conflicts or abs(weight_sum - 1.0) > 1e-6:
+            raise SystemExit(
+                f"코어 자산배분 설정 오류: 다른 전략과 겹치는 종목 {conflicts}, "
+                f"비중 합 {weight_sum:.3f} (1.0이어야 함)"
+            )
     print("=" * 60)
     print("🎯 키움증권 퀀트 스나이퍼 봇 가동 시작 (동적 스크리닝 & ATR 손익비 엔진)")
     print(f"   [비용 설정] 거래세: {TRANSACTION_TAX_PCT*100:.2f}% | 수수료: {BROKER_COMMISSION_PCT*100:.3f}%×2 | 슬리피지: {SLIPPAGE_ESTIMATE_PCT*100:.2f}%×2")
@@ -1912,6 +2057,8 @@ def run_trading_loop():
                 + list(ETF_ROTATION_ASSETS)
                 + list(SECTOR_ETF_ASSETS)
                 + ([PARKING_ETF_CODE] if PARKING_ENABLED else [])
+                + (list(CORE_TARGETS) if CORE_ALLOCATION_ENABLED else [])
+                + list(core_holdings(load_json(CORE_STATE_FILE, {})))
                 + [p.get("code") for p in load_json(POSITIONS_FILE, {}).values()]
             )
             proxy_quote = (
@@ -2078,6 +2225,7 @@ def run_trading_loop():
             positions = load_json(POSITIONS_FILE, {})
             trades = load_json(TRADES_FILE, [])
             parking = load_json(PARKING_STATE_FILE, {})
+            core_state = load_json(CORE_STATE_FILE, {})
 
             # 실계좌가 상태의 원본이다. 조회 실패는 해당 루프의 신규 주문만 차단한다.
             # 다음 조회가 정상이면 영구 안전잠금과 구분해 즉시 거래를 재개한다.
@@ -2197,6 +2345,18 @@ def run_trading_loop():
                 broker_parking_qty = int(
                     account["positions"].get(PARKING_ETF_CODE, {}).get("shares", 0)
                 )
+                for core_code in set(CORE_TARGETS) | set(core_holdings(core_state)):
+                    local_core_qty = core_shares(core_state, core_code)
+                    if local_core_qty > 0:
+                        local_codes.add(core_code)
+                    broker_core_qty = int(
+                        account["positions"].get(core_code, {}).get("shares", 0)
+                    )
+                    if broker_core_qty != local_core_qty:
+                        trading_halted = True
+                        risk_reasons.append(f"코어 자산배분 수량 불일치({core_code})")
+                        print(f"[{now_str}] [RISK] 코어 자산배분 {core_code} 수량 불일치로 신규 주문 중단 "
+                              f"(broker={broker_core_qty}, local={local_core_qty})")
                 if broker_parking_qty != parking_shares(parking):
                     trading_halted = True
                     risk_reasons.append("대기자금 ETF 수량 불일치")
@@ -2244,6 +2404,8 @@ def run_trading_loop():
                     + list(ETF_ROTATION_ASSETS)
                     + list(SECTOR_ETF_ASSETS)
                     + ([PARKING_ETF_CODE] if PARKING_ENABLED else [])
+                    + (list(CORE_TARGETS) if CORE_ALLOCATION_ENABLED else [])
+                    + list(core_holdings(core_state))
                     + [p.get("code") for p in positions.values()]
                 )
                 dashboard_context.update({
@@ -2395,6 +2557,15 @@ def run_trading_loop():
                 )
                 if account.get("ok") else dashboard_context.get("parking")
             )
+            if account.get("ok"):
+                dashboard_context["core"] = core_dashboard_info(
+                    core_state,
+                    {
+                        code: (realtime.quote(code) or {}).get("price")
+                        for code in CORE_TARGETS
+                    },
+                    float(account.get("total_assets") or 0),
+                )
             etf_tradeability = []
             if account.get("ok"):
                 etf_codes = list(dict.fromkeys(
@@ -3063,6 +3234,92 @@ def run_trading_loop():
                 for item in dashboard_context.get("signal_statuses", []):
                     item["count"] = 0
                     
+            # 코어 자산배분: 월 1회(최초 실행 포함) 목표 비중으로 맞춘다. 매도 → 매수 순서.
+            if (
+                CORE_ALLOCATION_ENABLED
+                and is_core_rebalance_window(now)
+                and core_rebalance_due(core_state, now)
+                and account.get("ok")
+                and not (trading_halted or account_lookup_failed)
+            ):
+                core_prices = {
+                    code: (realtime.quote(code) or {}).get("price")
+                    for code in set(CORE_TARGETS) | set(core_holdings(core_state))
+                }
+                core_total_assets = float(account.get("total_assets") or 0)
+                core_plan = plan_core_rebalance(core_total_assets, core_prices, core_state)
+                if core_plan is None:
+                    print(f"[{now_str}] [CORE] 실시간 시세가 없는 종목이 있어 다음 루프에 다시 시도")
+                else:
+                    core_failed = False
+                    core_cash = api.get_cash_balance(force_refresh=True)
+                    for side, code, name, qty, price in core_plan:
+                        if side == "buy":
+                            if entry_size_multiplier < 1:
+                                continue  # 계좌 낙폭 구간에서는 코어 비중을 늘리지 않는다
+                            spendable = entry_cash_after_reserve(
+                                core_total_assets,
+                                core_cash + parking_liquidation_value(parking, parking_price),
+                            )
+                            qty = min(qty, int(spendable // price))
+                            if qty < 1:
+                                continue
+                            shortfall = qty * price - entry_cash_after_reserve(
+                                core_total_assets, core_cash
+                            )
+                            sell_qty = parking_sell_shares_needed(
+                                shortfall, parking_price, parking_shares(parking)
+                            )
+                            if sell_qty > 0:
+                                sold_qty, sold_price, sell_error = execute_parking_order(
+                                    api, "sell", sell_qty, parking_price
+                                )
+                                if sold_qty > 0:
+                                    parking = apply_parking_fill(
+                                        parking, "sell", sold_qty, sold_price, today_str
+                                    )
+                                    save_json(PARKING_STATE_FILE, parking)
+                                if sell_error:
+                                    core_failed = True
+                                    failure_reason = f"대기자금 회수 실패: {sell_error}"
+                                    break
+                                core_cash = api.get_cash_balance(force_refresh=True)
+                                qty = min(qty, int(entry_cash_after_reserve(
+                                    core_total_assets, core_cash
+                                ) // price))
+                                if qty < 1:
+                                    continue
+                        filled_qty, fill_price, order_error = execute_etf_order(
+                            api, side, code, f"{name} 코어", qty, price,
+                            "코어 자산배분 리밸런싱",
+                        )
+                        if filled_qty > 0:
+                            core_state = apply_core_fill(
+                                core_state, side, code, filled_qty, fill_price
+                            )
+                            save_json(CORE_STATE_FILE, core_state)
+                            record_dashboard_event(
+                                "CORE", name, code,
+                                "코어 비중 축소" if side == "sell" else "코어 비중 확대",
+                            )
+                            dashboard_dirty = True
+                            core_cash = api.get_cash_balance(force_refresh=True)
+                        if order_error:
+                            core_failed = True
+                            failure_reason = f"코어 자산배분 {name} 체결 미확인: {order_error}"
+                            break
+                    if core_failed:
+                        trading_halted = True
+                        risk_reasons.append(failure_reason)
+                        record_dashboard_event("RISK", reason=failure_reason)
+                        dashboard_dirty = True
+                        dashboard_critical = True
+                        print(f"[{now_str}] [CRITICAL] {failure_reason}; 신규주문 중단")
+                    else:
+                        core_state["last_rebalance_month"] = now.strftime("%Y-%m")
+                        save_json(CORE_STATE_FILE, core_state)
+                        print(f"[{now_str}] [CORE] 이번 달 코어 자산배분 리밸런싱 완료")
+
             # 장 막판(진입 종료 후)에 남는 현금을 하루 한 번 대기자금 ETF에 넣는다.
             if (
                 PARKING_ENABLED

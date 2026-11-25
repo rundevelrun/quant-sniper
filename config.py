@@ -101,11 +101,11 @@ ETF_ROTATION_BAND_PCT = 0.01
 ETF_ROTATION_SHORT_MOMENTUM_DAYS = 60
 ETF_ROTATION_LONG_MOMENTUM_DAYS = 120
 ETF_ROTATION_SWITCH_MARGIN = 0.02
-ETF_ROTATION_ALLOC_PCT = 0.40  # 파라미터 900조합 중간값 기준 낙폭(-24%@50%)을 중단 한도 -20% 안에 두기 위한 배정
+ETF_ROTATION_ALLOC_PCT = 0.30  # 코어 자산배분 50%와 함께 운용(조합 백테스트 기준)
 # ETF 추세전환은 국면 전환(60일선·모멘텀)으로 청산한다. 손절은 급락 대비 재해 손절만 둔다.
 ETF_ROTATION_STOP_LOSS_PCT = 0.05
-# 재해 손절 5% × 배정 40% = 계좌 2.0%. 개별주 0.7%와 별도로 ETF 추세전환에만 적용한다.
-ETF_MAX_RISK_PER_TRADE_PCT = 0.02
+# 재해 손절 5% × 배정 30% = 계좌 1.5%. 개별주 0.7%와 별도로 ETF 추세전환에만 적용한다.
+ETF_MAX_RISK_PER_TRADE_PCT = 0.015
 ETF_MAX_ADVERSE_ENTRY_GAP_PCT = 0.03  # 전일 종가 대비 -3% 초과 역방향 갭은 회복 전 진입 금지
 SECTOR_ETF_ENABLED = False  # 다중자산 ETF와 중복되어 비활성화
 SECTOR_ETF_ASSETS = {
@@ -124,6 +124,22 @@ SECTOR_ETF_LONG_MOMENTUM_DAYS = 60
 SECTOR_ETF_SWITCH_MARGIN = 0.02
 SECTOR_ETF_ALLOC_PCT = 0.15
 SECTOR_ETF_STOP_LOSS_PCT = 0.025
+
+# 코어 자산배분: 계좌의 일정 비율을 고정 비중(올웨더형)으로 보유하고 월 1회 비중을 다시 맞춘다.
+# 추세전환 ETF·대기자금과 종목 코드가 겹치지 않는 ETF만 쓴다(증권사 잔고 대조를 종목 코드로 하기 때문).
+CORE_ALLOCATION_ENABLED = True
+CORE_ALLOCATION_PCT = 0.50          # 계좌 평가자산 대비 코어 비중
+CORE_TARGETS = {                    # 코어 안에서의 비중(합 1.0)
+    "102110": ("TIGER 200", 0.15),
+    "367380": ("ACE 미국나스닥100", 0.15),
+    "365780": ("ACE 국고채10년", 0.40),
+    "319640": ("TIGER 골드선물(H)", 0.15),
+    "329750": ("TIGER 미국달러단기채권액티브", 0.15),
+}
+CORE_REBALANCE_START_TIME = "10:00"  # 장 초반 변동과 장 막판 주문을 피한다
+CORE_REBALANCE_END_TIME = "14:30"
+CORE_MIN_TRADE_PCT = 0.015           # 목표와의 차이가 계좌의 1.5% 미만이면 매매하지 않는다
+CORE_ONE_SHARE_TOLERANCE = 1.5       # 목표 금액이 1주 값에 못 미쳐도 1주 값이 목표의 1.5배 이내면 1주 보유
 
 # 대기자금: 신호가 없어 남는 현금을 단기금리 ETF에 넣어 두고, 매수 신호가 오면 필요한 만큼 판다.
 # 보유 종목 수·업종·배정·위험 계산에서는 현금으로 취급한다.

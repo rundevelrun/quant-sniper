@@ -15,6 +15,9 @@ from bot import (
     is_dashboard_five_minute_due, is_dashboard_heartbeat_due,
     git_commit_and_push, is_entry_window, is_stock_entry_window,
     stock_entry_block_reason,
+    apply_core_fill, core_code_conflicts, core_dashboard_info,
+    core_desired_shares, core_rebalance_due, core_shares,
+    is_core_rebalance_window, plan_core_rebalance,
     account_with_parking_cash, apply_parking_fill, is_parking_window,
     parking_buy_shares, parking_dashboard_info, parking_liquidation_value,
     parking_reference_price, parking_sell_shares_needed,
@@ -1295,6 +1298,71 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(info["weight_pct"], 33.3)
         self.assertEqual(info["return_pct"], 1.0)
         self.assertIsNone(parking_dashboard_info({}, 55550, 500000))
+
+    def test_core_targets_do_not_overlap_other_strategies(self):
+        self.assertEqual(core_code_conflicts(), [])
+        self.assertAlmostEqual(
+            sum(weight for _, weight in config.CORE_TARGETS.values()), 1.0
+        )
+        self.assertLessEqual(
+            config.CORE_ALLOCATION_PCT + config.ETF_ROTATION_ALLOC_PCT,
+            config.MAX_TOTAL_EXPOSURE_PCT,
+        )
+
+    def test_core_desired_shares_rounds_and_keeps_small_differences(self):
+        # 목표 100,000원, 1주 30,000원 → 3주
+        self.assertEqual(core_desired_shares(100000, 30000, 0, 15000), 3)
+        # 1주 값이 목표의 1.5배 이내면 1주 보유, 넘으면 보유하지 않음
+        self.assertEqual(core_desired_shares(20000, 26000, 0, 15000), 1)
+        self.assertEqual(core_desired_shares(20000, 73000, 0, 15000), 0)
+        # 차이가 최소 매매 금액보다 작으면 현재 수량 유지
+        self.assertEqual(core_desired_shares(100000, 10000, 9, 15000), 9)
+        self.assertEqual(core_desired_shares(100000, 10000, 13, 15000), 10)
+
+    def test_core_plan_sells_before_buys_and_skips_unaffordable(self):
+        prices = {"102110": 73000, "367380": 26000, "365780": 87000,
+                  "319640": 20000, "329750": 12500}
+        plan = plan_core_rebalance(1_000_000, prices, {})
+        self.assertEqual(
+            [(side, code, qty) for side, code, _, qty, _ in plan],
+            [("buy", "365780", 2), ("buy", "329750", 6), ("buy", "102110", 1),
+             ("buy", "319640", 3), ("buy", "367380", 2)],
+        )
+        held = {"holdings": {"365780": {"shares": 5, "avg_price": 87000}}}
+        plan = plan_core_rebalance(1_000_000, prices, held)
+        self.assertEqual(plan[0][:2], ("sell", "365780"))
+        self.assertEqual(plan[0][3], 3)
+        # 소액 계좌에서는 1주가 목표의 1.5배를 넘는 종목을 건너뛴다.
+        small = plan_core_rebalance(300_000, prices, {})
+        self.assertNotIn("102110", [code for _, code, _, _, _ in small])
+        # 시세가 하나라도 없으면 계획을 만들지 않는다.
+        self.assertIsNone(plan_core_rebalance(1_000_000, {**prices, "319640": None}, {}))
+
+    def test_core_ledger_and_monthly_schedule(self):
+        state = apply_core_fill({}, "buy", "319640", 3, 20000)
+        state = apply_core_fill(state, "buy", "319640", 1, 24000)
+        self.assertEqual(core_shares(state, "319640"), 4)
+        self.assertAlmostEqual(state["holdings"]["319640"]["avg_price"], 21000)
+        state = apply_core_fill(state, "sell", "319640", 4, 25000)
+        self.assertEqual(core_shares(state, "319640"), 0)
+        self.assertNotIn("319640", state["holdings"])
+        now = datetime.datetime(2026, 12, 1, 10, 30)
+        self.assertTrue(core_rebalance_due({}, now))
+        self.assertTrue(core_rebalance_due({"last_rebalance_month": "2026-11"}, now))
+        self.assertFalse(core_rebalance_due({"last_rebalance_month": "2026-12"}, now))
+        self.assertTrue(is_core_rebalance_window(now))
+        self.assertFalse(is_core_rebalance_window(datetime.datetime(2026, 12, 1, 9, 30)))
+        self.assertFalse(is_core_rebalance_window(datetime.datetime(2026, 12, 1, 15, 0)))
+
+    def test_core_dashboard_hides_amounts(self):
+        state = {"holdings": {"319640": {"shares": 3, "avg_price": 20000}},
+                 "last_rebalance_month": "2026-12"}
+        info = core_dashboard_info(state, {"319640": 21000}, 1_000_000)
+        gold = next(item for item in info["assets"] if "골드" in item["name"])
+        self.assertEqual(set(gold), {"name", "target_pct", "weight_pct", "return_pct"})
+        self.assertEqual(gold["target_pct"], 7.5)
+        self.assertEqual(gold["weight_pct"], 6.3)
+        self.assertEqual(gold["return_pct"], 5.0)
 
 
 if __name__ == "__main__":
