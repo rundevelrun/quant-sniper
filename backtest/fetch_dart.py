@@ -53,38 +53,47 @@ def number(text):
         return None
 
 
-def main(first_year=2015, last_year=2025):
+def main(first_year=2015, last_year=2025, chunk_size=20, workers=12):
+    """DART는 연결당 전송 속도가 느려서(초당 약 15KB) 작은 묶음을 여러 연결로 나눠 받는다."""
+    import concurrent.futures as cf
     key = api_key()
     stocks = [f[:-4] for f in os.listdir(os.path.join(CACHE, "stocks"))]
     mapping = corp_codes(key)
-    corps = {mapping[c]: c for c in stocks if c in mapping}
-    print("대상", len(corps), "/", len(stocks), flush=True)
-    rows = []
-    corp_list = list(corps)
-    for year in range(first_year, last_year + 1):
-        for i in range(0, len(corp_list), 100):
-            chunk = ",".join(corp_list[i:i + 100])
-            url = (f"{BASE}/fnlttMultiAcnt.json?crtfc_key={key}&corp_code={chunk}"
-                   f"&bsns_year={year}&reprt_code=11011")
-            for attempt in range(3):
-                try:
-                    data = json.loads(get(url))
-                    break
-                except Exception:
-                    time.sleep(2)
-            else:
-                continue
-            if data.get("status") not in ("000", "013"):
-                print(year, i, data.get("status"), data.get("message"), flush=True)
-            for r in data.get("list", []):
-                if r.get("account_nm") in ACCOUNTS:
-                    rows.append((r["stock_code"], year, r["fs_div"], r["account_nm"].replace("(손실)", ""),
-                                 number(r.get("thstrm_amount"))))
-            time.sleep(0.15)
-        print(year, len(rows), flush=True)
+    corp_list = [mapping[c] for c in stocks if c in mapping]
+    print("대상", len(corp_list), "/", len(stocks), flush=True)
+    jobs = [(year, corp_list[i:i + chunk_size])
+            for year in range(first_year, last_year + 1)
+            for i in range(0, len(corp_list), chunk_size)]
+
+    def work(job):
+        year, chunk = job
+        url = (f"{BASE}/fnlttMultiAcnt.json?crtfc_key={key}&corp_code={','.join(chunk)}"
+               f"&bsns_year={year}&reprt_code=11011")
+        for _ in range(3):
+            try:
+                data = json.loads(get(url, 120))
+                break
+            except Exception:
+                time.sleep(2)
+        else:
+            return year, None, []
+        return year, data.get("status"), [
+            (r["stock_code"], year, r["fs_div"], r["account_nm"].replace("(손실)", ""),
+             number(r.get("thstrm_amount")))
+            for r in data.get("list", []) if r.get("account_nm") in ACCOUNTS
+        ]
+
+    rows, failed = [], 0
+    with cf.ThreadPoolExecutor(workers) as ex:
+        for n, (year, status, part) in enumerate(ex.map(work, jobs), 1):
+            rows += part
+            if status not in ("000", "013"):
+                failed += 1
+            if n % 50 == 0:
+                print(f"{n}/{len(jobs)} 묶음, 행 {len(rows)}, 실패 {failed}", flush=True)
     df = pd.DataFrame(rows, columns=["code", "year", "fs", "account", "value"]).dropna()
     df.to_csv(OUT, index=False)
-    print("완료", len(df), df.code.nunique())
+    print("완료", len(df), df.code.nunique(), "실패 묶음", failed)
 
 
 if __name__ == "__main__":
