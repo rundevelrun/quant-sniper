@@ -17,3 +17,4 @@ DASHBOARD.md
 *.tmp
 venv/
 .DS_Store
+backtest/.cache/
