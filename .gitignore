@@ -11,6 +11,7 @@ health.json
 dashboard_events.json
 dashboard_state.json
 mim_state.json
+parking_state.json
 DASHBOARD.md
 .quant_sniper.lock
 *.tmp

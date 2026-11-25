@@ -2,6 +2,7 @@ import os
 import time
 import json
 import datetime
+import math
 import subprocess
 import fcntl
 import html
@@ -36,6 +37,9 @@ from config import (
     ETF_MAX_RISK_PER_TRADE_PCT, ETF_SLIPPAGE_ESTIMATE_PCT,
     STOCK_ENTRY_START_TIME, STOCK_ENTRY_END_TIME,
     BLOCK_STOCK_ENTRIES_WHEN_INVERSE,
+    PARKING_ENABLED, PARKING_ETF_CODE, PARKING_ETF_NAME,
+    PARKING_START_TIME, PARKING_END_TIME, PARKING_MIN_KRW,
+    PARKING_VALUE_HAIRCUT_PCT,
     SECTOR_ETF_ENABLED, SECTOR_ETF_ASSETS, SECTOR_ETF_MA_PERIOD,
     SECTOR_ETF_SLOPE_DAYS, SECTOR_ETF_BAND_PCT,
     SECTOR_ETF_SHORT_MOMENTUM_DAYS, SECTOR_ETF_LONG_MOMENTUM_DAYS,
@@ -60,6 +64,7 @@ DASHBOARD_FILE = os.path.join(BASE_DIR, "DASHBOARD.md")
 DASHBOARD_EVENTS_FILE = os.path.join(BASE_DIR, "dashboard_events.json")
 DASHBOARD_STATE_FILE = os.path.join(BASE_DIR, "dashboard_state.json")
 MIM_STATE_FILE = os.path.join(BASE_DIR, "mim_state.json")
+PARKING_STATE_FILE = os.path.join(BASE_DIR, "parking_state.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
 RESEARCH_DB_FILE = os.path.join(BASE_DIR, "research_data.db")
 CURRENT_MARKET_OPEN = False
@@ -315,7 +320,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         market_label = (
             "🟢 상승 국면 — 신규 진입 검토 가능"
             if context.get("market_favorable")
-            else "🔴 비우호 국면 — 강한 RSI 50%·예외 VBO 15%"
+            else "🔴 비우호 국면 — 강한 RSI 50%"
         )
     rotation = context.get("etf_rotation", {})
     sector_rotation = context.get("sector_etf", {})
@@ -347,6 +352,16 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         *(
             ["", f"> 개별주: {_md(context['stock_entry_block_reason'])}"]
             if context.get("stock_entry_block_reason") else []
+        ),
+        *(
+            ["", "> 현금 대기: {} · 계좌 비중 {} · 수익률 {}".format(
+                _md(context["parking"].get("name")),
+                f"{context['parking']['weight_pct']:.1f}%"
+                if context["parking"].get("weight_pct") is not None else "-",
+                f"{context['parking']['return_pct']:+.2f}%"
+                if context["parking"].get("return_pct") is not None else "-",
+            )]
+            if context.get("parking") else []
         ),
         "", "## 현재 보유 포지션", "",
         '<table width="100%">',
@@ -453,10 +468,13 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f"| RSI 반등 | {'신호 확인 중' if int(context.get('confirming_signal_count', 0)) else '대기'} "
         f"| 감시 유니버스 | {market_label} |",
         f"| VBO 돌파 | {'확정 신호 있음' if int(context.get('confirmed_signal_count', 0)) else '대기'} "
-        "| 감시 유니버스 | 가격 돌파와 거래량 확인 |",
-        f"| 당일 거래량 급증 | {'후보 감시' if int(context.get('intraday_surge_count', 0)) else '대기'} "
-        f"| {int(context.get('intraday_surge_count', 0))}종목 | 5분 순위 조회 · 계좌 15% · 동시 1종목 |",
+        "| 감시 유니버스 | 가격 돌파와 거래량 확인 · 우호장만 |",
     ]
+    if INTRADAY_SURGE_ENABLED:
+        lines.append(
+            f"| 당일 거래량 급증 | {'후보 감시' if int(context.get('intraday_surge_count', 0)) else '대기'} "
+            f"| {int(context.get('intraday_surge_count', 0))}종목 | 5분 순위 조회 · 계좌 15% · 동시 1종목 |"
+        )
     if MIM_ENABLED:
         lines.append(
             f"| 장마감 모멘텀 | {'진입 신호' if mim_state.get('long_signal') else '수집/대기'} "
@@ -530,7 +548,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "| 시각 | 유형 | 종목 | 사유 | 반복 |",
         "|---|---|---|---|---:|",
     ]
-    visible_types = {"BUY", "SELL", "RISK", "ERROR"}
+    visible_types = {"BUY", "SELL", "PARK", "RISK", "ERROR"}
     visible = [e for e in recent_events if e.get("type") in visible_types]
     for event in reversed(visible[-20:]):
         lines.append(
@@ -650,6 +668,7 @@ def build_dashboard_state(status, detail, positions, realtime, render_context, n
         "running_commit": render_context.get("commit_hash"),
         "entry_allowed": bool(render_context.get("entry_allowed", False)),
         "stock_entry_block_reason": render_context.get("stock_entry_block_reason"),
+        "parking": render_context.get("parking"),
         "account_drawdown_pct": render_context.get("account_drawdown_pct"),
         "daily_return_pct": render_context.get("daily_return_pct"),
         "cumulative_return_pct": render_context.get("cumulative_return_pct"),
@@ -1129,6 +1148,115 @@ def entry_cash_after_reserve(total_assets, cash):
     reserve = total_assets * (1.0 - MAX_TOTAL_EXPOSURE_PCT)
     return max(0.0, cash - reserve)
 
+
+# ---- 대기자금(단기금리 ETF) ----
+def parking_shares(parking):
+    return max(0, int((parking or {}).get("shares", 0) or 0))
+
+def parking_reference_price(parking, quote=None):
+    """실시간가가 없으면 마지막 확인가·평균단가로 대체한다(주문 수량 추정용)."""
+    if quote and float(quote.get("price") or 0) > 0:
+        return float(quote["price"])
+    parking = parking or {}
+    return float(parking.get("last_price") or parking.get("avg_price") or 0)
+
+def parking_liquidation_value(parking, price):
+    """대기자금을 지금 팔면 받을 보수적 금액."""
+    shares = parking_shares(parking)
+    if shares <= 0 or price <= 0:
+        return 0.0
+    return shares * price * (1.0 - PARKING_VALUE_HAIRCUT_PCT)
+
+def account_with_parking_cash(account, parking, price):
+    """전략 계산용 계좌: 대기자금 ETF를 현금으로 본다."""
+    value = parking_liquidation_value(parking, price)
+    if not account.get("ok") or value <= 0:
+        return account
+    return {**account, "cash": float(account.get("cash") or 0) + value}
+
+def parking_buy_shares(total_assets, cash, price):
+    """10% 현금 버퍼를 남기고 넣을 수 있는 대기자금 ETF 수량."""
+    if not PARKING_ENABLED or price <= 0:
+        return 0
+    idle = entry_cash_after_reserve(total_assets, cash)
+    if idle < max(PARKING_MIN_KRW, price):
+        return 0
+    return int(idle // (price * (1.0 + PARKING_VALUE_HAIRCUT_PCT)))
+
+def parking_sell_shares_needed(shortfall, price, held_shares):
+    """매수 자금 부족분을 채우는 데 필요한 최소 매도 수량."""
+    if shortfall <= 0 or price <= 0 or held_shares <= 0:
+        return 0
+    needed = math.ceil(shortfall * (1.0 + PARKING_VALUE_HAIRCUT_PCT) / price)
+    return min(int(held_shares), max(1, needed))
+
+def apply_parking_fill(parking, side, filled_qty, fill_price, today_str):
+    """대기자금 체결을 로컬 장부에 반영한다(평균단가 유지)."""
+    parking = dict(parking or {})
+    shares = parking_shares(parking)
+    if filled_qty <= 0:
+        return parking
+    if side == "buy":
+        avg = float(parking.get("avg_price") or 0)
+        new_shares = shares + filled_qty
+        parking["avg_price"] = (
+            (avg * shares + fill_price * filled_qty) / new_shares
+        )
+        parking["shares"] = new_shares
+    else:
+        parking["shares"] = max(0, shares - filled_qty)
+        if parking["shares"] == 0:
+            parking.pop("avg_price", None)
+    parking["code"] = PARKING_ETF_CODE
+    parking["last_price"] = fill_price
+    parking["last_trade_date"] = today_str
+    return parking
+
+def is_parking_window(now=None):
+    now = now or datetime.datetime.now()
+    start_hour, start_minute = map(int, PARKING_START_TIME.split(":"))
+    end_hour, end_minute = map(int, PARKING_END_TIME.split(":"))
+    start = now.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+    end = now.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+    return start <= now <= end
+
+def parking_dashboard_info(parking, price, total_assets):
+    """공개 대시보드용: 금액·수량 없이 비중과 수익률만."""
+    shares = parking_shares(parking)
+    if shares <= 0:
+        return None
+    avg = float(parking.get("avg_price") or 0)
+    return {
+        "name": PARKING_ETF_NAME,
+        "weight_pct": (
+            round(shares * price / total_assets * 100, 1)
+            if price > 0 and total_assets > 0 else None
+        ),
+        "return_pct": (
+            round((price - avg) / avg * 100, 2) if price > 0 and avg > 0 else None
+        ),
+    }
+
+def execute_parking_order(api, side, shares, price_hint):
+    """대기자금 ETF 시장가 주문 후 체결 수량·가격을 확인한다. ETF는 KRX로만 보낸다."""
+    if side == "buy":
+        order = api.send_buy_order(
+            PARKING_ETF_CODE, PARKING_ETF_NAME, shares, price_hint, exchange="KRX",
+        )
+    else:
+        order = api.send_sell_order(
+            PARKING_ETF_CODE, PARKING_ETF_NAME, shares, price_hint,
+            "대기자금 회수", exchange="KRX",
+        )
+    if order.get("status") == "filled":
+        return shares, float(price_hint), None
+    if order.get("status") == "accepted":
+        fill = confirm_order_fill(api, order.get("order_id"), PARKING_ETF_CODE, shares)
+        filled = int(fill.get("filled_qty", 0) or 0)
+        return filled, float(fill.get("fill_price") or price_hint), (
+            None if filled >= shares else fill.get("error", "체결 확인 시간 초과")
+        )
+    return 0, 0.0, order.get("message", "알 수 없는 주문 상태")
 
 def screening_preferred_max_price(account):
     """당일 허용 상승 후에도 비우호장 50%에서 1주 가능한 전일종가 상한."""
@@ -1780,6 +1908,7 @@ def run_trading_loop():
                 + [MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE]
                 + list(ETF_ROTATION_ASSETS)
                 + list(SECTOR_ETF_ASSETS)
+                + ([PARKING_ETF_CODE] if PARKING_ENABLED else [])
                 + [p.get("code") for p in load_json(POSITIONS_FILE, {}).values()]
             )
             proxy_quote = (
@@ -1799,6 +1928,13 @@ def run_trading_loop():
             if DYNAMIC_SCREENING and last_screened_date != today_str and screening_window:
                 print(f"[{now_str}] 🔍 전일(D-1) 확정 거래대금 TOP 우량주 동적 스크리닝 가동...")
                 screening_account = api.get_account_snapshot()
+                screening_parking = load_json(PARKING_STATE_FILE, {})
+                screening_account = account_with_parking_cash(
+                    screening_account, screening_parking,
+                    parking_reference_price(
+                        screening_parking, realtime.quote(PARKING_ETF_CODE)
+                    ),
+                )
                 preferred_max_price = screening_preferred_max_price(screening_account)
                 screened = api.get_previous_day_universe(
                     SCREENER_TOP_N, MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW,
@@ -1853,6 +1989,13 @@ def run_trading_loop():
             if intraday_bootstrap:
                 print(f"[{now_str}] 🔄 키움 전일 거래대금 기준 장중 유니버스 복구...")
                 screening_account = api.get_account_snapshot()
+                screening_parking = load_json(PARKING_STATE_FILE, {})
+                screening_account = account_with_parking_cash(
+                    screening_account, screening_parking,
+                    parking_reference_price(
+                        screening_parking, realtime.quote(PARKING_ETF_CODE)
+                    ),
+                )
                 preferred_max_price = screening_preferred_max_price(screening_account)
                 screened = api.get_previous_day_universe(
                     SCREENER_TOP_N, MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW,
@@ -1925,6 +2068,7 @@ def run_trading_loop():
                 
             positions = load_json(POSITIONS_FILE, {})
             trades = load_json(TRADES_FILE, [])
+            parking = load_json(PARKING_STATE_FILE, {})
 
             # 실계좌가 상태의 원본이다. 조회 실패는 해당 루프의 신규 주문만 차단한다.
             # 다음 조회가 정상이면 영구 안전잠금과 구분해 즉시 거래를 재개한다.
@@ -2039,6 +2183,16 @@ def run_trading_loop():
             if account.get("ok"):
                 broker_codes = set(account["positions"])
                 local_codes = {p.get("code") for p in positions.values()}
+                if parking_shares(parking) > 0:
+                    local_codes.add(PARKING_ETF_CODE)
+                broker_parking_qty = int(
+                    account["positions"].get(PARKING_ETF_CODE, {}).get("shares", 0)
+                )
+                if broker_parking_qty != parking_shares(parking):
+                    trading_halted = True
+                    risk_reasons.append("대기자금 ETF 수량 불일치")
+                    print(f"[{now_str}] [RISK] 대기자금 ETF 수량 불일치로 신규 주문 중단 "
+                          f"(broker={broker_parking_qty}, local={parking_shares(parking)})")
                 if broker_codes != local_codes:
                     trading_halted = True
                     risk_reasons.append("계좌/로컬 포지션 불일치")
@@ -2058,7 +2212,12 @@ def run_trading_loop():
                 surge_universe = api.get_intraday_surge_universe(
                     INTRADAY_SURGE_MAX_CANDIDATES,
                     MIN_MARKET_CAP_KRW, MAX_MARKET_CAP_KRW,
-                    intraday_surge_max_price(account),
+                    intraday_surge_max_price(account_with_parking_cash(
+                        account, parking,
+                        parking_reference_price(
+                            parking, realtime.quote(PARKING_ETF_CODE)
+                        ),
+                    )),
                     INTRADAY_SURGE_MIN_DAY_RETURN_PCT,
                     INTRADAY_SURGE_MAX_DAY_RETURN_PCT,
                     INTRADAY_SURGE_MIN_VOLUME_RATE_PCT,
@@ -2075,6 +2234,7 @@ def run_trading_loop():
                     + [MARKET_PROXY_CODE, KOSDAQ_MARKET_PROXY_CODE]
                     + list(ETF_ROTATION_ASSETS)
                     + list(SECTOR_ETF_ASSETS)
+                    + ([PARKING_ETF_CODE] if PARKING_ENABLED else [])
                     + [p.get("code") for p in positions.values()]
                 )
                 dashboard_context.update({
@@ -2212,6 +2372,20 @@ def run_trading_loop():
                 "held": bool(existing_sector_position),
                 **sector_detail,
             }
+            # 대기자금 ETF는 전략 계산에서 현금으로 본다.
+            parking_price = parking_reference_price(
+                parking, realtime.quote(PARKING_ETF_CODE)
+            )
+            strategy_account = account_with_parking_cash(
+                account, parking, parking_price
+            )
+            dashboard_context["parking"] = (
+                parking_dashboard_info(
+                    parking, parking_price,
+                    float(account.get("total_assets") or 0),
+                )
+                if account.get("ok") else dashboard_context.get("parking")
+            )
             etf_tradeability = []
             if account.get("ok"):
                 etf_codes = list(dict.fromkeys(
@@ -2224,14 +2398,14 @@ def run_trading_loop():
                     ETF_ROTATION_ASSETS, "다중자산 ETF", ETF_ROTATION_ALLOC_PCT,
                     ETF_ROTATION_STOP_LOSS_PCT,
                     float(account.get("total_assets") or 0),
-                    float(account.get("cash") or 0), etf_quotes,
+                    float(strategy_account.get("cash") or 0), etf_quotes,
                     entry_size_multiplier,
                     risk_pct=ETF_MAX_RISK_PER_TRADE_PCT,
                 ) + build_etf_tradeability(
                     SECTOR_ETF_ASSETS, "섹터 ETF", SECTOR_ETF_ALLOC_PCT,
                     SECTOR_ETF_STOP_LOSS_PCT,
                     float(account.get("total_assets") or 0),
-                    float(account.get("cash") or 0), etf_quotes,
+                    float(strategy_account.get("cash") or 0), etf_quotes,
                     entry_size_multiplier,
                     allow_one_share_over_allocation=True,
                 )
@@ -2376,7 +2550,7 @@ def run_trading_loop():
                 tradeability = build_tradeability(
                     active_universe, universe_metadata, candles_dict,
                     float(account.get("total_assets") or 0),
-                    float(account.get("cash") or 0), entry_size_multiplier,
+                    float(strategy_account.get("cash") or 0), entry_size_multiplier,
                     market_regimes,
                 )
                 # 전일 기준 스크리닝을 통과했더라도 장중 급등으로 현재 계좌에서
@@ -2709,8 +2883,11 @@ def run_trading_loop():
                         continue
                     entry_p = sig["entry_price"]
                     stop_loss_pct = float(sig.get("stop_loss_pct", STOP_LOSS_PCT))
+                    spendable_cash = cash + parking_liquidation_value(
+                        parking, parking_price
+                    )
                     shares = calculate_entry_shares(
-                        total_assets, entry_cash_after_reserve(total_assets, cash),
+                        total_assets, entry_cash_after_reserve(total_assets, spendable_cash),
                         entry_p, stop_loss_pct,
                         entry_size_multiplier * float(sig.get("size_multiplier", 1.0)),
                         sig.get("risk_pct"),
@@ -2737,6 +2914,38 @@ def run_trading_loop():
                         continue
                         
                     invest = shares * entry_p
+                    # 현금이 모자라면 대기자금 ETF를 필요한 만큼만 먼저 판다.
+                    shortfall = invest - entry_cash_after_reserve(total_assets, cash)
+                    sell_qty = parking_sell_shares_needed(
+                        shortfall, parking_price, parking_shares(parking)
+                    )
+                    if sell_qty > 0:
+                        sold_qty, sold_price, sell_error = execute_parking_order(
+                            api, "sell", sell_qty, parking_price
+                        )
+                        if sold_qty > 0:
+                            parking = apply_parking_fill(
+                                parking, "sell", sold_qty, sold_price, today_str
+                            )
+                            save_json(PARKING_STATE_FILE, parking)
+                            record_dashboard_event(
+                                "PARK", PARKING_ETF_NAME, PARKING_ETF_CODE,
+                                f"{name} 매수 자금 회수",
+                            )
+                            dashboard_dirty = True
+                        if sell_error:
+                            trading_halted = True
+                            failure_reason = f"대기자금 회수 실패: {sell_error}"
+                            risk_reasons.append(failure_reason)
+                            record_dashboard_event(
+                                "RISK", PARKING_ETF_NAME, PARKING_ETF_CODE,
+                                failure_reason,
+                            )
+                            dashboard_dirty = True
+                            dashboard_critical = True
+                            print(f"[{now_str}] [CRITICAL] {failure_reason}; 신규주문 중단")
+                            break
+                        cash = api.get_cash_balance(force_refresh=True)
                     if cash >= invest:
                         before_qty = 0
                         if account.get("ok"):
@@ -2838,6 +3047,44 @@ def run_trading_loop():
                 for item in dashboard_context.get("signal_statuses", []):
                     item["count"] = 0
                     
+            # 장 막판(진입 종료 후)에 남는 현금을 하루 한 번 대기자금 ETF에 넣는다.
+            if (
+                PARKING_ENABLED
+                and is_parking_window(now)
+                and parking.get("last_park_date") != today_str
+                and not (trading_halted or account_lookup_failed)
+                and realtime.quote(PARKING_ETF_CODE)
+            ):
+                parking["last_park_date"] = today_str
+                park_price = float(realtime.quote(PARKING_ETF_CODE)["price"])
+                park_cash = api.get_cash_balance(force_refresh=True)
+                park_total_assets = float(account.get("total_assets") or 0)
+                park_qty = parking_buy_shares(park_total_assets, park_cash, park_price)
+                if park_qty > 0:
+                    bought_qty, bought_price, buy_error = execute_parking_order(
+                        api, "buy", park_qty, park_price
+                    )
+                    if bought_qty > 0:
+                        parking = apply_parking_fill(
+                            parking, "buy", bought_qty, bought_price, today_str
+                        )
+                        record_dashboard_event(
+                            "PARK", PARKING_ETF_NAME, PARKING_ETF_CODE,
+                            "남는 현금 대기자금 편입",
+                        )
+                        dashboard_dirty = True
+                    if buy_error:
+                        trading_halted = True
+                        failure_reason = f"대기자금 편입 체결 미확인: {buy_error}"
+                        risk_reasons.append(failure_reason)
+                        record_dashboard_event(
+                            "RISK", PARKING_ETF_NAME, PARKING_ETF_CODE, failure_reason,
+                        )
+                        dashboard_dirty = True
+                        dashboard_critical = True
+                        print(f"[{now_str}] [CRITICAL] {failure_reason}")
+                save_json(PARKING_STATE_FILE, parking)
+
             # 주문 처리 중 새 영구 안전잠금이 발생했을 수 있으므로 최종 상태를 다시 계산한다.
             loop_halted = trading_halted or account_lookup_failed
             signal_snapshot = (

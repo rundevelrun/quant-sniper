@@ -15,6 +15,9 @@ from bot import (
     is_dashboard_five_minute_due, is_dashboard_heartbeat_due,
     git_commit_and_push, is_entry_window, is_stock_entry_window,
     stock_entry_block_reason,
+    account_with_parking_cash, apply_parking_fill, is_parking_window,
+    parking_buy_shares, parking_dashboard_info, parking_liquidation_value,
+    parking_reference_price, parking_sell_shares_needed,
     is_market_open, is_mim_entry_window, market_session_progress,
     mim_long_signal, save_json, trading_days_held, update_mim_state,
     etf_rotation_regime, etf_rotation_traded_today,
@@ -1226,6 +1229,53 @@ class SafetyTests(unittest.TestCase):
             "진입 시간",
             stock_entry_block_reason(datetime.datetime(2026, 11, 26, 10, 0), None, {}),
         )
+
+    def test_parking_keeps_ten_percent_cash_buffer(self):
+        # 총자산 330,000 중 현금 200,000: 버퍼 33,000을 남기고 167,000만 편입
+        self.assertEqual(parking_buy_shares(330000, 200000, 55000), 3)
+        # 버퍼를 빼면 1주도 안 되면 편입하지 않음
+        self.assertEqual(parking_buy_shares(330000, 60000, 55000), 0)
+
+    def test_parking_counts_as_cash_for_strategy_sizing(self):
+        parking = {"shares": 3, "avg_price": 55000}
+        account = {"ok": True, "total_assets": 330000, "cash": 40000}
+        effective = account_with_parking_cash(account, parking, 55000)
+        self.assertAlmostEqual(effective["cash"], 40000 + 3 * 55000 * 0.998)
+        self.assertEqual(account["cash"], 40000)
+        self.assertEqual(
+            account_with_parking_cash({"ok": False}, parking, 55000), {"ok": False}
+        )
+        self.assertEqual(parking_liquidation_value({}, 55000), 0)
+
+    def test_parking_sells_only_what_the_buy_needs(self):
+        self.assertEqual(parking_sell_shares_needed(60000, 55000, 3), 2)
+        self.assertEqual(parking_sell_shares_needed(10000, 55000, 3), 1)
+        self.assertEqual(parking_sell_shares_needed(500000, 55000, 3), 3)
+        self.assertEqual(parking_sell_shares_needed(0, 55000, 3), 0)
+
+    def test_parking_ledger_tracks_average_price(self):
+        parking = apply_parking_fill({}, "buy", 2, 55000, "2026-11-26")
+        parking = apply_parking_fill(parking, "buy", 2, 55100, "2026-11-27")
+        self.assertEqual(parking["shares"], 4)
+        self.assertAlmostEqual(parking["avg_price"], 55050)
+        parking = apply_parking_fill(parking, "sell", 4, 55200, "2026-11-28")
+        self.assertEqual(parking["shares"], 0)
+        self.assertNotIn("avg_price", parking)
+        self.assertEqual(parking_reference_price(parking), 55200)
+        self.assertEqual(parking_reference_price(parking, {"price": 55300}), 55300)
+
+    def test_parking_runs_after_stock_entries_before_closing_auction(self):
+        self.assertFalse(is_parking_window(datetime.datetime(2026, 11, 26, 15, 10)))
+        self.assertTrue(is_parking_window(datetime.datetime(2026, 11, 26, 15, 12)))
+        self.assertTrue(is_parking_window(datetime.datetime(2026, 11, 26, 15, 18)))
+        self.assertFalse(is_parking_window(datetime.datetime(2026, 11, 26, 15, 19)))
+
+    def test_parking_dashboard_hides_amounts(self):
+        info = parking_dashboard_info({"shares": 3, "avg_price": 55000}, 55550, 330000)
+        self.assertEqual(set(info), {"name", "weight_pct", "return_pct"})
+        self.assertEqual(info["weight_pct"], 50.5)
+        self.assertEqual(info["return_pct"], 1.0)
+        self.assertIsNone(parking_dashboard_info({}, 55550, 330000))
 
 
 if __name__ == "__main__":

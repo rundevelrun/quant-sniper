@@ -122,6 +122,16 @@ SECTOR_ETF_SWITCH_MARGIN = 0.02
 SECTOR_ETF_ALLOC_PCT = 0.15
 SECTOR_ETF_STOP_LOSS_PCT = 0.025
 
+# 대기자금: 신호가 없어 남는 현금을 단기금리 ETF에 넣어 두고, 매수 신호가 오면 필요한 만큼 판다.
+# 보유 종목 수·업종·배정·위험 계산에서는 현금으로 취급한다.
+PARKING_ENABLED = True
+PARKING_ETF_CODE = "357870"
+PARKING_ETF_NAME = "TIGER CD금리투자KIS(합성)"
+PARKING_START_TIME = "15:12"    # 개별주 진입(~15:10) 이후, 종가 동시호가(15:20) 이전
+PARKING_END_TIME = "15:18"
+PARKING_MIN_KRW = 30_000        # 이보다 작은 여유 현금은 넣지 않는다
+PARKING_VALUE_HAIRCUT_PCT = 0.002  # 매도 시 수수료·호가 여유
+
 # 💡 ATR 기반 동적 손절 및 손익비 규칙 (휩소 노이즈 방어)
 ATR_PERIOD = 14
 ATR_STOP_MULTIPLIER = 2.0      # 변동성(ATR) 기반 동적 손절 배수: 일중 노이즈 밖으로
