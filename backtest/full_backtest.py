@@ -310,7 +310,7 @@ def summarize(name, curve, trades, capital, kind=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", default="2017-01-02")
-    parser.add_argument("--capital", type=float, default=330000)
+    parser.add_argument("--capital", type=float, default=1_000_000)
     args = parser.parse_args()
     etf_data = load_prices(list(ETF_ROTATION_ASSETS) + [PARKING_ETF_CODE], "2014-01-01", CACHE)
     dates = etf_data["069500"].index

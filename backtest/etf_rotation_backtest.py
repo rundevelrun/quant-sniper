@@ -232,7 +232,7 @@ def summarize(name, curve, trades, capital):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", default="2016-06-01")
-    parser.add_argument("--capital", type=float, default=330000)
+    parser.add_argument("--capital", type=float, default=1_000_000)
     parser.add_argument("--cache", default=os.path.join(ROOT, "backtest", ".cache"))
     args = parser.parse_args()
     codes = list(ETF_ROTATION_ASSETS) + [PARKING_ETF_CODE]

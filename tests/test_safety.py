@@ -1219,11 +1219,11 @@ class SafetyTests(unittest.TestCase):
     def test_etf_rotation_can_use_fifty_percent_allocation(self):
         result = build_etf_tradeability(
             {"069500": "KODEX 200"}, "다중자산 ETF", 0.50, 0.05,
-            330000, 330000, {"069500": {"price": 10000}}, risk_pct=0.025,
+            300000, 300000, {"069500": {"price": 10000}}, risk_pct=0.025,
         )
-        self.assertEqual(result[0]["max_shares"], 16)
+        self.assertEqual(result[0]["max_shares"], 15)
         # 개별주 기본 한도(35%)는 그대로다.
-        self.assertEqual(calculate_entry_shares(330000, 330000, 10000, 0.01), 11)
+        self.assertEqual(calculate_entry_shares(300000, 300000, 10000, 0.01), 10)
 
     def test_stock_entries_only_near_close(self):
         self.assertFalse(is_stock_entry_window(datetime.datetime(2026, 11, 26, 9, 30)))
@@ -1250,14 +1250,14 @@ class SafetyTests(unittest.TestCase):
         )
 
     def test_parking_keeps_ten_percent_cash_buffer(self):
-        # 총자산 330,000 중 현금 200,000: 버퍼 33,000을 남기고 167,000만 편입
-        self.assertEqual(parking_buy_shares(330000, 200000, 55000), 3)
+        # 총자산 300,000 중 현금 200,000: 버퍼 30,000을 남기고 170,000만 편입
+        self.assertEqual(parking_buy_shares(300000, 200000, 55000), 3)
         # 버퍼를 빼면 1주도 안 되면 편입하지 않음
-        self.assertEqual(parking_buy_shares(330000, 60000, 55000), 0)
+        self.assertEqual(parking_buy_shares(300000, 60000, 55000), 0)
 
     def test_parking_counts_as_cash_for_strategy_sizing(self):
         parking = {"shares": 3, "avg_price": 55000}
-        account = {"ok": True, "total_assets": 330000, "cash": 40000}
+        account = {"ok": True, "total_assets": 300000, "cash": 40000}
         effective = account_with_parking_cash(account, parking, 55000)
         self.assertAlmostEqual(effective["cash"], 40000 + 3 * 55000 * 0.998)
         self.assertEqual(account["cash"], 40000)
@@ -1290,11 +1290,11 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse(is_parking_window(datetime.datetime(2026, 11, 26, 15, 19)))
 
     def test_parking_dashboard_hides_amounts(self):
-        info = parking_dashboard_info({"shares": 3, "avg_price": 55000}, 55550, 330000)
+        info = parking_dashboard_info({"shares": 3, "avg_price": 55000}, 55550, 500000)
         self.assertEqual(set(info), {"name", "weight_pct", "return_pct"})
-        self.assertEqual(info["weight_pct"], 50.5)
+        self.assertEqual(info["weight_pct"], 33.3)
         self.assertEqual(info["return_pct"], 1.0)
-        self.assertIsNone(parking_dashboard_info({}, 55550, 330000))
+        self.assertIsNone(parking_dashboard_info({}, 55550, 500000))
 
 
 if __name__ == "__main__":
