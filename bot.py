@@ -466,9 +466,9 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         )
     lines += [
         f"| RSI 반등 | {'신호 확인 중' if int(context.get('confirming_signal_count', 0)) else '대기'} "
-        f"| 감시 유니버스 | {market_label} |",
+        f"| 감시 유니버스 | {market_label} · {STOCK_ENTRY_START_TIME}~{STOCK_ENTRY_END_TIME} 진입 |",
         f"| VBO 돌파 | {'확정 신호 있음' if int(context.get('confirmed_signal_count', 0)) else '대기'} "
-        "| 감시 유니버스 | 가격 돌파와 거래량 확인 · 우호장만 |",
+        f"| 감시 유니버스 | 가격 돌파와 거래량 확인 · 우호장만 · {STOCK_ENTRY_START_TIME}~{STOCK_ENTRY_END_TIME} 진입 |",
     ]
     if INTRADAY_SURGE_ENABLED:
         lines.append(
