@@ -101,11 +101,11 @@ ETF_ROTATION_BAND_PCT = 0.01
 ETF_ROTATION_SHORT_MOMENTUM_DAYS = 60
 ETF_ROTATION_LONG_MOMENTUM_DAYS = 120
 ETF_ROTATION_SWITCH_MARGIN = 0.02
-ETF_ROTATION_ALLOC_PCT = 0.50  # 백테스트(2017~2026): 30%→50%로 연 6.7%→9.9%, 낙폭 -9.6%→-14.7%
+ETF_ROTATION_ALLOC_PCT = 0.40  # 파라미터 900조합 중간값 기준 낙폭(-24%@50%)을 중단 한도 -20% 안에 두기 위한 배정
 # ETF 추세전환은 국면 전환(60일선·모멘텀)으로 청산한다. 손절은 급락 대비 재해 손절만 둔다.
 ETF_ROTATION_STOP_LOSS_PCT = 0.05
-# 재해 손절 5% × 배정 50% = 계좌 2.5%. 개별주 0.7%와 별도로 ETF 추세전환에만 적용한다.
-ETF_MAX_RISK_PER_TRADE_PCT = 0.025
+# 재해 손절 5% × 배정 40% = 계좌 2.0%. 개별주 0.7%와 별도로 ETF 추세전환에만 적용한다.
+ETF_MAX_RISK_PER_TRADE_PCT = 0.02
 ETF_MAX_ADVERSE_ENTRY_GAP_PCT = 0.03  # 전일 종가 대비 -3% 초과 역방향 갭은 회복 전 진입 금지
 SECTOR_ETF_ENABLED = False  # 다중자산 ETF와 중복되어 비활성화
 SECTOR_ETF_ASSETS = {
