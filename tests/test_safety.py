@@ -1219,6 +1219,12 @@ class SafetyTests(unittest.TestCase):
         self.assertTrue(is_stock_entry_window(datetime.datetime(2026, 11, 26, 15, 10)))
         self.assertFalse(is_stock_entry_window(datetime.datetime(2026, 11, 26, 15, 11)))
 
+    def test_stock_strategies_disabled_blocks_all_stock_entries(self):
+        late = datetime.datetime(2026, 11, 26, 15, 0)
+        with patch("bot.STOCK_STRATEGIES_ENABLED", False):
+            self.assertIn("비활성화", stock_entry_block_reason(late, "069500", {}))
+
+    @patch("bot.STOCK_STRATEGIES_ENABLED", True)
     def test_inverse_etf_blocks_stock_entries(self):
         late = datetime.datetime(2026, 11, 26, 15, 0)
         held_inverse = {"KODEX 인버스 추세": {"code": "114800"}}

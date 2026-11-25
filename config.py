@@ -68,6 +68,9 @@ MAX_ENTRY_DAY_RETURN_PCT = 0.10
 MAX_UPPER_WICK_RATIO = 0.40
 ENTRY_START_TIME = "09:15"
 ENTRY_END_TIME = "15:10"         # ETF 포함 전체 신규 진입 허용 시간
+# 개별주(RSI·VBO) 신규 매수. 2017~2026 백테스트에서 비용 후 손실(손익비 0.83)이라 끈다.
+# 꺼도 이미 보유한 개별주는 기존 손절·보호·타임스탑 규칙으로 끝까지 감시·청산한다.
+STOCK_STRATEGIES_ENABLED = False
 # 개별주 일봉 신호는 장중 미완성 봉이 종가에 무너지는 것을 피하려고 장 막판에만 진입한다.
 STOCK_ENTRY_START_TIME = "14:50"
 STOCK_ENTRY_END_TIME = "15:10"

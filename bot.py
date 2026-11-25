@@ -36,7 +36,7 @@ from config import (
     ETF_MAX_ADVERSE_ENTRY_GAP_PCT,
     ETF_MAX_RISK_PER_TRADE_PCT, ETF_SLIPPAGE_ESTIMATE_PCT,
     STOCK_ENTRY_START_TIME, STOCK_ENTRY_END_TIME,
-    BLOCK_STOCK_ENTRIES_WHEN_INVERSE,
+    BLOCK_STOCK_ENTRIES_WHEN_INVERSE, STOCK_STRATEGIES_ENABLED,
     PARKING_ENABLED, PARKING_ETF_CODE, PARKING_ETF_NAME,
     PARKING_START_TIME, PARKING_END_TIME, PARKING_MIN_KRW,
     PARKING_VALUE_HAIRCUT_PCT,
@@ -465,9 +465,9 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             f"| {sector_label} | 전일 확정 1/3개월 모멘텀·시장 상대강도·최대 15% |"
         )
     lines += [
-        f"| RSI 반등 | {'신호 확인 중' if int(context.get('confirming_signal_count', 0)) else '대기'} "
+        f"| RSI 반등 | {'비활성화' if not STOCK_STRATEGIES_ENABLED else '신호 확인 중' if int(context.get('confirming_signal_count', 0)) else '대기'} "
         f"| 감시 유니버스 | {market_label} · {STOCK_ENTRY_START_TIME}~{STOCK_ENTRY_END_TIME} 진입 |",
-        f"| VBO 돌파 | {'확정 신호 있음' if int(context.get('confirmed_signal_count', 0)) else '대기'} "
+        f"| VBO 돌파 | {'비활성화' if not STOCK_STRATEGIES_ENABLED else '확정 신호 있음' if int(context.get('confirmed_signal_count', 0)) else '대기'} "
         f"| 감시 유니버스 | 가격 돌파와 거래량 확인 · 우호장만 · {STOCK_ENTRY_START_TIME}~{STOCK_ENTRY_END_TIME} 진입 |",
     ]
     if INTRADAY_SURGE_ENABLED:
@@ -1499,6 +1499,8 @@ def is_stock_entry_window(now=None):
 
 def stock_entry_block_reason(now, rotation_target_code, positions):
     """개별주 신규 매수를 막아야 하면 사유를, 허용되면 None을 반환한다."""
+    if not STOCK_STRATEGIES_ENABLED:
+        return "개별주 전략 비활성화(보유분만 청산 감시)"
     if BLOCK_STOCK_ENTRIES_WHEN_INVERSE and ETF_ROTATION_ENABLED and (
         rotation_target_code == ETF_ROTATION_INVERSE_CODE
         or any(
@@ -1968,6 +1970,10 @@ def run_trading_loop():
                     })
                     print(f"[{now_str}] ✅ 오늘자 감시 유니버스 {len(active_universe)}종목 갱신 완료:")
                     print("   ", ", ".join(list(active_universe.keys())[:10]), "...")
+                elif not STOCK_STRATEGIES_ENABLED:
+                    # 개별주를 쓰지 않으면 유니버스 실패가 ETF 주문을 막지 않는다.
+                    active_universe = {}
+                    print(f"[{now_str}] [INFO] D-1 스크리닝 실패(개별주 비활성화라 주문 영향 없음)")
                 else:
                     active_universe = {}
                     risk_reasons.append("D-1 스크리닝 실패")
@@ -2028,6 +2034,8 @@ def run_trading_loop():
                         ],
                     })
                     print(f"[{now_str}] ✅ 장중 유니버스 {len(screened)}종목 복구 완료")
+                elif not STOCK_STRATEGIES_ENABLED:
+                    print(f"[{now_str}] [INFO] 장중 유니버스 복구 실패(개별주 비활성화라 주문 영향 없음)")
                 else:
                     trading_halted = True
                     risk_reasons.append("키움 전일 유니버스 복구 실패")
@@ -2752,7 +2760,10 @@ def run_trading_loop():
                     risk_reasons.append("매도 체결 내역 GitHub push 실패")
                 
             # 3. 신규 매수 신호 탐색 및 진입 집행
-            if DYNAMIC_SCREENING and last_screened_date != today_str:
+            if (
+                DYNAMIC_SCREENING and STOCK_STRATEGIES_ENABLED
+                and last_screened_date != today_str
+            ):
                 trading_halted = True
                 risk_reasons.append("오늘자 D-1 유니버스 없음")
                 print(f"[{now_str}] [RISK] 오늘자 D-1 유니버스가 없어 신규 주문을 중단합니다.")
