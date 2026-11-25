@@ -13,7 +13,8 @@ from bot import (
     entry_cash_after_reserve,
     build_operational_status, confirm_persistent_signals, dashboard_status_label,
     is_dashboard_five_minute_due, is_dashboard_heartbeat_due,
-    git_commit_and_push, is_entry_window,
+    git_commit_and_push, is_entry_window, is_stock_entry_window,
+    stock_entry_block_reason,
     is_market_open, is_mim_entry_window, market_session_progress,
     mim_long_signal, save_json, trading_days_held, update_mim_state,
     etf_rotation_regime, etf_rotation_traded_today,
@@ -435,7 +436,7 @@ class SafetyTests(unittest.TestCase):
         result = build_tradeability(
             {"가능주": "000001", "고가주": "000002"},
             {"가능주": {"sector": "기계"}, "고가주": {"sector": "기계"}},
-            {"가능주": candles(50000), "고가주": candles(100000)},
+            {"가능주": candles(30000), "고가주": candles(100000)},
             300000, 300000,
         )
         self.assertTrue(result[0]["eligible"])
@@ -453,7 +454,7 @@ class SafetyTests(unittest.TestCase):
                 "저가주": {"market": "KOSPI", "sector": "기계"},
                 "중가주": {"market": "KOSPI", "sector": "화학"},
             },
-            {"저가주": candles(20000), "중가주": candles(35000)},
+            {"저가주": candles(15000), "중가주": candles(35000)},
             300000, 300000, 1.0, {"KOSPI": False},
         )
         self.assertEqual(result[0]["max_shares"], 1)
@@ -713,7 +714,8 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse(is_entry_window(datetime.datetime(2026, 11, 13, 9, 14)))
         self.assertTrue(is_entry_window(datetime.datetime(2026, 11, 13, 9, 15)))
         self.assertTrue(is_entry_window(datetime.datetime(2026, 11, 13, 14, 30)))
-        self.assertFalse(is_entry_window(datetime.datetime(2026, 11, 13, 14, 31)))
+        self.assertTrue(is_entry_window(datetime.datetime(2026, 11, 13, 15, 10)))
+        self.assertFalse(is_entry_window(datetime.datetime(2026, 11, 13, 15, 11)))
         self.assertEqual(market_session_progress(datetime.datetime(2026, 11, 13, 9, 0)), 0)
         self.assertEqual(market_session_progress(datetime.datetime(2026, 11, 13, 15, 30)), 1)
 
@@ -1129,11 +1131,11 @@ class SafetyTests(unittest.TestCase):
         cap = screening_preferred_max_price({
             "ok": True, "total_assets": 306170, "cash": 306170,
         })
-        self.assertAlmostEqual(cap, 24354.431818181816)
+        self.assertAlmostEqual(cap, 16236.287878787878)
 
     def test_intraday_surge_is_limited_to_fifteen_percent(self):
         account = {"ok": True, "total_assets": 300000, "cash": 300000}
-        self.assertAlmostEqual(intraday_surge_max_price(account), 22500)
+        self.assertAlmostEqual(intraday_surge_max_price(account), 15000)
         signals = [{"name": "급증주", "strategy": "변동성 돌파 (추세)",
                     "size_multiplier": 1.0}]
         limited = apply_intraday_surge_limits(signals, {"급증주"})[0]
@@ -1169,23 +1171,61 @@ class SafetyTests(unittest.TestCase):
         stop_after_pullback, _ = update_position_stop(pos, 10800)
         self.assertEqual(stop_after_pullback, stop)
 
-    def test_etf_rotation_starts_high_water_trailing_at_six_percent(self):
-        pos = {"buy_price": 10000, "stop_loss_pct": 0.025,
-               "trailing_gap_pct": 0.025, "highest_price": 10000,
-               "strategy": "시장 ETF 3상태 추세전환"}
-        stop, reason = update_position_stop(pos, 10600)
-        self.assertAlmostEqual(stop, 10441)
-        self.assertEqual(reason, "고점 추적 트레일링 스탑")
-        self.assertTrue(pos["trailing_active"])
-
-    def test_etf_rotation_uses_staged_profit_protection(self):
-        pos = {"buy_price": 10000, "stop_loss_pct": 0.025,
+    def test_etf_rotation_holds_trend_without_tight_trailing(self):
+        pos = {"buy_price": 10000, "stop_loss_pct": 0.05,
                "highest_price": 10000,
                "strategy": "시장 ETF 3상태 추세전환"}
-        self.assertEqual(update_position_stop(pos, 10200)[0], 10000)
-        self.assertEqual(update_position_stop(pos, 10300)[0], 10100)
-        self.assertEqual(update_position_stop(pos, 10400)[0], 10100)
-        self.assertEqual(update_position_stop(pos, 10500)[0], 10300)
+        for price in (10200, 10500, 11000, 12000):
+            stop, reason = update_position_stop(pos, price)
+            self.assertAlmostEqual(stop, 9500)
+            self.assertEqual(reason, "ETF 재해 손절 (-5.0%)")
+        self.assertFalse(pos.get("trailing_active", False))
+        self.assertNotIn("trailing_stop_price", pos)
+        self.assertEqual(pos["highest_price"], 12000)
+
+    def test_etf_rotation_keeps_previously_locked_protection(self):
+        # 과거 버전에서 +3% 보호선이 걸린 보유분은 손절선을 낮추지 않는다.
+        pos = {"buy_price": 1340, "stop_loss_pct": 0.025,
+               "highest_price": 1412, "trailing_stop_price": 1380.2,
+               "strategy": "시장 ETF 3상태 추세전환"}
+        stop, reason = update_position_stop(pos, 1400)
+        self.assertAlmostEqual(stop, 1380.2)
+        self.assertEqual(reason, "ETF 기존 보호선")
+        self.assertAlmostEqual(update_position_stop(pos, 1500)[0], 1380.2)
+
+    def test_stock_stop_logic_is_unchanged_for_existing_positions(self):
+        pos = {"buy_price": 21950, "stop_loss_pct": 0.04,
+               "trailing_gap_pct": 0.04, "highest_price": 21950,
+               "strategy": "RSI 과매도 반등"}
+        stop, reason = update_position_stop(pos, 21950)
+        self.assertAlmostEqual(stop, 21072)
+        self.assertEqual(reason, "동적 손절 (-4.0% ATR 보정)")
+
+    def test_etf_risk_budget_allows_thirty_percent_allocation(self):
+        shares = calculate_entry_shares(
+            300000, 300000, 10000, 0.05, risk_pct=0.015
+        )
+        self.assertEqual(shares, 9)
+        # 기본(개별주) 위험 한도는 그대로 0.7%다.
+        self.assertEqual(calculate_entry_shares(300000, 300000, 10000, 0.05), 4)
+
+    def test_stock_entries_only_near_close(self):
+        self.assertFalse(is_stock_entry_window(datetime.datetime(2026, 11, 26, 9, 30)))
+        self.assertFalse(is_stock_entry_window(datetime.datetime(2026, 11, 26, 14, 49)))
+        self.assertTrue(is_stock_entry_window(datetime.datetime(2026, 11, 26, 14, 50)))
+        self.assertTrue(is_stock_entry_window(datetime.datetime(2026, 11, 26, 15, 10)))
+        self.assertFalse(is_stock_entry_window(datetime.datetime(2026, 11, 26, 15, 11)))
+
+    def test_inverse_etf_blocks_stock_entries(self):
+        late = datetime.datetime(2026, 11, 26, 15, 0)
+        held_inverse = {"KODEX 인버스 추세": {"code": "114800"}}
+        self.assertIn("인버스", stock_entry_block_reason(late, None, held_inverse))
+        self.assertIn("인버스", stock_entry_block_reason(late, "114800", {}))
+        self.assertIsNone(stock_entry_block_reason(late, "069500", {}))
+        self.assertIn(
+            "진입 시간",
+            stock_entry_block_reason(datetime.datetime(2026, 11, 26, 10, 0), None, {}),
+        )
 
 
 if __name__ == "__main__":

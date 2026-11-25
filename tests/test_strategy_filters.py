@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from strategy import evaluate_signals, is_favorable_market
 
@@ -58,6 +59,15 @@ class StrategyFilterTests(unittest.TestCase):
         self.assertEqual(signals[0]["strategy"], "RSI 과매도 반등")
         self.assertEqual(signals[0]["size_multiplier"], 0.5)
 
+    def test_unfavorable_strong_vbo_is_disabled_by_default(self):
+        candles = [candle(100 + i * 0.2, vol=1000) for i in range(29)]
+        prev = candles[-1]
+        target = 106.0 + (prev["high"] - prev["low"]) * 0.5
+        candles.append(candle(target + 1, open_price=106.0,
+                              high=target + 1.2, low=105.8, vol=2200))
+        falling = [candle(200 - i) for i in range(70)]
+        self.assertEqual(evaluate_signals({"강한돌파주": candles}, falling), [])
+
     def test_unfavorable_market_still_blocks_vbo(self):
         candles = [candle(100 + i * 0.2, vol=1000) for i in range(29)]
         prev = candles[-1]
@@ -67,6 +77,7 @@ class StrategyFilterTests(unittest.TestCase):
         falling = [candle(200 - i) for i in range(70)]
         self.assertEqual(evaluate_signals({"돌파주": candles}, falling), [])
 
+    @patch("strategy.UNFAVORABLE_VBO_ENABLED", True)
     def test_unfavorable_market_allows_only_strong_vbo_at_fifteen_percent(self):
         candles = [candle(100 + i * 0.2, vol=1000) for i in range(29)]
         prev = candles[-1]
@@ -81,6 +92,7 @@ class StrategyFilterTests(unittest.TestCase):
         self.assertEqual(signals[0]["strategy"], "비우호장 강한 VBO (15%)")
         self.assertAlmostEqual(signals[0]["size_multiplier"], 0.15 / 0.35)
 
+    @patch("strategy.UNFAVORABLE_VBO_ENABLED", True)
     def test_unfavorable_vbo_blocks_late_breakout_chasing(self):
         candles = [candle(100 + i * 0.2, vol=1000) for i in range(29)]
         prev = candles[-1]
@@ -97,6 +109,7 @@ class StrategyFilterTests(unittest.TestCase):
         self.assertEqual(signals, [])
         self.assertIn("돌파가 추격", diagnostics["늦은돌파주"]["vbo_blocker"])
 
+    @patch("strategy.UNFAVORABLE_VBO_ENABLED", True)
     def test_unfavorable_vbo_blocks_more_than_six_percent_day_gain(self):
         candles = [candle(100 + i * 0.2, vol=1000) for i in range(29)]
         prev = candles[-1]

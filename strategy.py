@@ -2,7 +2,7 @@ from config import (
     RSI_PERIOD, RSI_BUY_THRESHOLD, RSI_RECOVERY_THRESHOLD, VBO_K,
     MARKET_MA_PERIOD, VOLUME_CONFIRM_MULTIPLIER, MAX_ENTRY_GAP_PCT,
     MAX_ENTRY_DAY_RETURN_PCT, MAX_UPPER_WICK_RATIO,
-    UNFAVORABLE_VBO_VOLUME_MULTIPLIER,
+    UNFAVORABLE_VBO_ENABLED, UNFAVORABLE_VBO_VOLUME_MULTIPLIER,
     UNFAVORABLE_VBO_RELATIVE_STRENGTH_PCT,
     UNFAVORABLE_VBO_MAX_MARKET_DROP_PCT,
     UNFAVORABLE_VBO_MAX_DAY_RETURN_PCT,
@@ -146,7 +146,8 @@ def evaluate_signals(candles_dict, market_candles=None, volume_progress=1.0,
             if target_price > 0 else 0.0
         )
         strong_unfavorable_vbo_base = (
-            not favorable_market
+            UNFAVORABLE_VBO_ENABLED
+            and not favorable_market
             and (curr["close"] >= target_price)
             and (curr["close"] > curr["open"])
             and (curr["close"] > ma20)

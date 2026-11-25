@@ -33,7 +33,9 @@ from config import (
     ETF_ROTATION_LONG_MOMENTUM_DAYS, ETF_ROTATION_SWITCH_MARGIN,
     ETF_ROTATION_ALLOC_PCT, ETF_ROTATION_STOP_LOSS_PCT,
     ETF_MAX_ADVERSE_ENTRY_GAP_PCT,
-    ETF_ROTATION_TRAILING_TRIGGER, ETF_ROTATION_TRAILING_GAP,
+    ETF_MAX_RISK_PER_TRADE_PCT, ETF_SLIPPAGE_ESTIMATE_PCT,
+    STOCK_ENTRY_START_TIME, STOCK_ENTRY_END_TIME,
+    BLOCK_STOCK_ENTRIES_WHEN_INVERSE,
     SECTOR_ETF_ENABLED, SECTOR_ETF_ASSETS, SECTOR_ETF_MA_PERIOD,
     SECTOR_ETF_SLOPE_DAYS, SECTOR_ETF_BAND_PCT,
     SECTOR_ETF_SHORT_MOMENTUM_DAYS, SECTOR_ETF_LONG_MOMENTUM_DAYS,
@@ -74,8 +76,9 @@ SECTOR_ETF_NAMES = {
     code: f"{name} 추세" for code, name in SECTOR_ETF_ASSETS.items()
 }
 ETF_ROUNDTRIP_COST_PCT = (BROKER_COMMISSION_PCT * 2) + (
-    SLIPPAGE_ESTIMATE_PCT * 2
+    ETF_SLIPPAGE_ESTIMATE_PCT * 2
 )
+NON_STOCK_STRATEGIES = {MIM_STRATEGY, ETF_ROTATION_STRATEGY, SECTOR_ETF_STRATEGY}
 
 def acquire_instance_lock():
     lock_handle = open(LOCK_FILE, "w", encoding="utf-8")
@@ -341,6 +344,10 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "",
         f"> {_md(detail)} · 키움 실시간 {'정상' if realtime_ok else '연결 대기'}"
         f" · 마지막 계좌 확인 {_md(context.get('last_account_sync', '-'))}",
+        *(
+            ["", f"> 개별주: {_md(context['stock_entry_block_reason'])}"]
+            if context.get("stock_entry_block_reason") else []
+        ),
         "", "## 현재 보유 포지션", "",
         '<table width="100%">',
         '<thead><tr>',
@@ -363,15 +370,15 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 display_name = name.removesuffix(" 추세")
                 display_strategy = "ETF 추세전환"
                 exit_plan = (
-                    f"국면 전환 · -{float(pos.get('stop_loss_pct', ETF_ROTATION_STOP_LOSS_PCT))*100:.1f}% 손절"
-                    " · +2% 본전 · +3% 보호 · +5% 강화 · +6% 추적"
+                    f"국면 전환 · -{float(pos.get('stop_loss_pct', ETF_ROTATION_STOP_LOSS_PCT))*100:.1f}% 재해 손절"
+                    + (" · 기존 보호선 유지" if pos.get("trailing_stop_price") else "")
                 )
             elif strategy == SECTOR_ETF_STRATEGY:
                 display_name = name.removesuffix(" 추세")
                 display_strategy = "섹터 ETF 추세"
                 exit_plan = (
-                    f"섹터 전환 · -{float(pos.get('stop_loss_pct', SECTOR_ETF_STOP_LOSS_PCT))*100:.1f}% 손절"
-                    " · +2% 본전 · +3% 보호 · +5% 강화 · +6% 추적"
+                    f"섹터 전환 · -{float(pos.get('stop_loss_pct', SECTOR_ETF_STOP_LOSS_PCT))*100:.1f}% 재해 손절"
+                    + (" · 기존 보호선 유지" if pos.get("trailing_stop_price") else "")
                 )
             elif strategy == MIM_STRATEGY:
                 display_strategy = "장마감 모멘텀"
@@ -642,6 +649,7 @@ def build_dashboard_state(status, detail, positions, realtime, render_context, n
         "last_loop_at": render_context.get("last_loop_at"),
         "running_commit": render_context.get("commit_hash"),
         "entry_allowed": bool(render_context.get("entry_allowed", False)),
+        "stock_entry_block_reason": render_context.get("stock_entry_block_reason"),
         "account_drawdown_pct": render_context.get("account_drawdown_pct"),
         "daily_return_pct": render_context.get("daily_return_pct"),
         "cumulative_return_pct": render_context.get("cumulative_return_pct"),
@@ -786,35 +794,27 @@ def update_position_stop(pos, current_price):
     pos["highest_price"] = highest_price
     stop_price = buy_price * (1 - stop_loss_pct)
 
-    is_rotation = pos.get("strategy") == ETF_ROTATION_STRATEGY
-    is_sector_etf = pos.get("strategy") == SECTOR_ETF_STRATEGY
-    is_trend_etf = is_rotation or is_sector_etf
-    trailing_trigger = ETF_ROTATION_TRAILING_TRIGGER if is_trend_etf else TAKE_PROFIT_PCT
-    if highest_price >= buy_price * (1 + trailing_trigger):
-        gap = (
-            ETF_ROTATION_TRAILING_GAP
-            if is_trend_etf
-            else float(pos.get(
-                "trailing_gap_pct",
-                max(0.02, min(0.04, stop_loss_pct / 1.5)),
-            ))
-        )
+    is_trend_etf = pos.get("strategy") in {
+        ETF_ROTATION_STRATEGY, SECTOR_ETF_STRATEGY
+    }
+    if is_trend_etf:
+        # 3/6개월 추세 신호의 보유 기간에 맞춰 단계형 보호·고점 추적을 쓰지 않는다.
+        # 청산은 국면 전환과 재해 손절로 하되, 과거 버전에서 이미 올라간
+        # 보호선은 낮추지 않는다.
+        locked_stop = float(pos.get("trailing_stop_price") or 0)
+        if locked_stop > stop_price:
+            return locked_stop, "ETF 기존 보호선"
+        return stop_price, f"ETF 재해 손절 (-{stop_loss_pct*100:.1f}%)"
+
+    if highest_price >= buy_price * (1 + TAKE_PROFIT_PCT):
+        gap = float(pos.get(
+            "trailing_gap_pct",
+            max(0.02, min(0.04, stop_loss_pct / 1.5)),
+        ))
         pos["trailing_active"] = True
         stop_price = max(float(pos.get("trailing_stop_price", 0)), highest_price * (1 - gap))
         pos["trailing_stop_price"] = stop_price
         reason = "고점 추적 트레일링 스탑"
-    elif is_trend_etf and highest_price >= buy_price * 1.05:
-        stop_price = max(float(pos.get("trailing_stop_price", 0)), buy_price * 1.03)
-        pos["trailing_stop_price"] = stop_price
-        reason = "ETF 수익 보호 스탑 (+3%)"
-    elif is_trend_etf and highest_price >= buy_price * 1.03:
-        stop_price = max(float(pos.get("trailing_stop_price", 0)), buy_price * 1.01)
-        pos["trailing_stop_price"] = stop_price
-        reason = "ETF 수익 보호 스탑 (+1%)"
-    elif is_trend_etf and highest_price >= buy_price * 1.02:
-        stop_price = max(float(pos.get("trailing_stop_price", 0)), buy_price)
-        pos["trailing_stop_price"] = stop_price
-        reason = "ETF 본전 보호 스탑"
     elif highest_price >= buy_price * (1 + TRAILING_STOP_TRIGGER):
         stop_price = max(float(pos.get("trailing_stop_price", 0)),
                          buy_price * (1 + TRAILING_STOP_LOCK))
@@ -1111,12 +1111,13 @@ def time_stop_reason(pos, current_price):
     return None
 
 def calculate_entry_shares(total_assets, cash, entry_price, stop_loss_pct,
-                           size_multiplier=1.0):
-    """종목당 투자 한도와 거래당 계획 손실 0.7%를 모두 지키는 정수 수량을 산출한다."""
+                           size_multiplier=1.0, risk_pct=None):
+    """종목당 투자 한도와 거래당 계획 손실(기본 0.7%)을 모두 지키는 정수 수량을 산출한다."""
+    risk_pct = MAX_RISK_PER_TRADE_PCT if risk_pct is None else risk_pct
     if min(total_assets, cash, entry_price, stop_loss_pct, size_multiplier) <= 0:
         return 0
     allocation_cap = total_assets * MAX_ALLOC_PER_STOCK * size_multiplier
-    risk_budget = total_assets * MAX_RISK_PER_TRADE_PCT * size_multiplier
+    risk_budget = total_assets * risk_pct * size_multiplier
     risk_per_share = entry_price * stop_loss_pct
     shares_by_allocation = int(allocation_cap // entry_price)
     shares_by_risk = int(risk_budget // risk_per_share)
@@ -1259,7 +1260,8 @@ def build_tradeability(active_universe, universe_metadata, candles_dict,
 def build_etf_tradeability(assets, strategy, allocation_pct, stop_loss_pct,
                            total_assets, cash, quotes,
                            size_multiplier=1.0,
-                           allow_one_share_over_allocation=False):
+                           allow_one_share_over_allocation=False,
+                           risk_pct=None):
     """ETF 전략의 실제 주문식과 동일한 한도로 매수 가능 수량을 계산한다."""
     available_cash = entry_cash_after_reserve(total_assets, cash)
     results = []
@@ -1267,7 +1269,8 @@ def build_etf_tradeability(assets, strategy, allocation_pct, stop_loss_pct,
         quote = quotes.get(code) or {}
         price = float(quote.get("price") or 0)
         shares = calculate_entry_shares(
-            total_assets, available_cash, price, stop_loss_pct, size_multiplier
+            total_assets, available_cash, price, stop_loss_pct, size_multiplier,
+            risk_pct,
         )
         allocation_shares = (
             int(total_assets * allocation_pct // price) if price > 0 else 0
@@ -1356,6 +1359,31 @@ def is_entry_window(now=None):
     start = now.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
     end = now.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
     return start <= now <= end
+
+def is_stock_entry_window(now=None):
+    """개별주 일봉 신호는 종가에 가까운 장 막판에만 진입한다."""
+    now = now or datetime.datetime.now()
+    start_hour, start_minute = map(int, STOCK_ENTRY_START_TIME.split(":"))
+    end_hour, end_minute = map(int, STOCK_ENTRY_END_TIME.split(":"))
+    start = now.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+    end = now.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+    return start <= now <= end
+
+def stock_entry_block_reason(now, rotation_target_code, positions):
+    """개별주 신규 매수를 막아야 하면 사유를, 허용되면 None을 반환한다."""
+    if BLOCK_STOCK_ENTRIES_WHEN_INVERSE and ETF_ROTATION_ENABLED and (
+        rotation_target_code == ETF_ROTATION_INVERSE_CODE
+        or any(
+            pos.get("code") == ETF_ROTATION_INVERSE_CODE
+            for pos in positions.values()
+        )
+    ):
+        return "인버스 ETF 국면: 개별주 신규 매수 차단"
+    if not is_stock_entry_window(now):
+        return (
+            f"개별주 진입 시간({STOCK_ENTRY_START_TIME}~{STOCK_ENTRY_END_TIME}) 외"
+        )
+    return None
 
 def is_mim_entry_window(now=None):
     now = now or datetime.datetime.now()
@@ -2198,6 +2226,7 @@ def run_trading_loop():
                     float(account.get("total_assets") or 0),
                     float(account.get("cash") or 0), etf_quotes,
                     entry_size_multiplier,
+                    risk_pct=ETF_MAX_RISK_PER_TRADE_PCT,
                 ) + build_etf_tradeability(
                     SECTOR_ETF_ASSETS, "섹터 ETF", SECTOR_ETF_ALLOC_PCT,
                     SECTOR_ETF_STOP_LOSS_PCT,
@@ -2271,6 +2300,7 @@ def run_trading_loop():
                         "size_multiplier": 1.0,
                         "max_investment_pct": ETF_ROTATION_ALLOC_PCT,
                         "stop_loss_pct": ETF_ROTATION_STOP_LOSS_PCT,
+                        "risk_pct": ETF_MAX_RISK_PER_TRADE_PCT,
                         "take_profit_pct": 1.0,
                         "atr": float(rotation_quote["price"]) * ETF_ROTATION_STOP_LOSS_PCT,
                         "roundtrip_cost_pct": ETF_ROUNDTRIP_COST_PCT,
@@ -2368,7 +2398,11 @@ def run_trading_loop():
                 dashboard_context["universe_count"] = len(monitored_names)
 
             raw_signal_by_name = {sig["name"]: sig for sig in raw_signals}
+            stock_block_reason = stock_entry_block_reason(
+                now, rotation_target_code, positions
+            )
             dashboard_context.update({
+                "stock_entry_block_reason": stock_block_reason,
                 "market_favorable": market_favorable,
                 "market_regimes": market_regimes,
                 "raw_signal_count": len(raw_signals),
@@ -2567,6 +2601,11 @@ def run_trading_loop():
                         sig for sig in raw_signals
                         if sig.get("strategy") != MIM_STRATEGY
                     ]
+                if stock_block_reason:
+                    signals = [
+                        sig for sig in signals
+                        if sig.get("strategy") in NON_STOCK_STRATEGIES
+                    ]
                 # 재기동 직후의 일시적/이미 끝난 신호 추격을 막는다. 동일 전략 신호가
                 # 30초 간격으로 3회 연속 유지될 때만 신규 주문 후보로 인정한다.
                 signals, signal_confirmations = confirm_persistent_signals(
@@ -2674,6 +2713,7 @@ def run_trading_loop():
                         total_assets, entry_cash_after_reserve(total_assets, cash),
                         entry_p, stop_loss_pct,
                         entry_size_multiplier * float(sig.get("size_multiplier", 1.0)),
+                        sig.get("risk_pct"),
                     )
                     shares = min(shares, int(sig.get("max_shares", shares)))
                     if sig.get("max_investment_pct") is not None:

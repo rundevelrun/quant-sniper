@@ -47,13 +47,15 @@ MARKET_PROXY_CODE = "069500"   # KODEX 200: 국내 시장 추세 프록시
 KOSDAQ_MARKET_PROXY_CODE = "229200" # KODEX 코스닥150: 코스닥 시장 추세 프록시
 MARKET_MA_PERIOD = 60
 VOLUME_CONFIRM_MULTIPLIER = 1.5
+# 비우호장 VBO 예외는 검증 전까지 끈다. 비우호장에서는 RSI 반등(50% 크기)만 허용한다.
+UNFAVORABLE_VBO_ENABLED = False
 UNFAVORABLE_VBO_VOLUME_MULTIPLIER = 2.0
 UNFAVORABLE_VBO_RELATIVE_STRENGTH_PCT = 0.02
 UNFAVORABLE_VBO_MAX_MARKET_DROP_PCT = 0.015
 UNFAVORABLE_VBO_MAX_DAY_RETURN_PCT = 0.06
 UNFAVORABLE_VBO_MAX_BREAKOUT_CHASE_PCT = 0.02
 UNFAVORABLE_VBO_SIZE_MULTIPLIER = 0.15 / 0.35
-INTRADAY_SURGE_ENABLED = True
+INTRADAY_SURGE_ENABLED = False  # 전략 수 축소: 장중 급증 스캐너 비활성화
 INTRADAY_SURGE_SCAN_INTERVAL_SECONDS = 300
 INTRADAY_SURGE_MAX_CANDIDATES = 8
 INTRADAY_SURGE_MIN_DAY_RETURN_PCT = 0.01
@@ -65,7 +67,12 @@ MAX_ENTRY_GAP_PCT = 0.04
 MAX_ENTRY_DAY_RETURN_PCT = 0.10
 MAX_UPPER_WICK_RATIO = 0.40
 ENTRY_START_TIME = "09:15"
-ENTRY_END_TIME = "14:30"
+ENTRY_END_TIME = "15:10"         # ETF 포함 전체 신규 진입 허용 시간
+# 개별주 일봉 신호는 장중 미완성 봉이 종가에 무너지는 것을 피하려고 장 막판에만 진입한다.
+STOCK_ENTRY_START_TIME = "14:50"
+STOCK_ENTRY_END_TIME = "15:10"
+# ETF 추세전환이 인버스를 선택했거나 보유 중이면 개별주 신규 매수를 막는다.
+BLOCK_STOCK_ENTRIES_WHEN_INVERSE = True
 MIM_ENABLED = False
 MIM_ENTRY_START_TIME = "15:00"
 MIM_ENTRY_END_TIME = "15:05"
@@ -92,11 +99,12 @@ ETF_ROTATION_SHORT_MOMENTUM_DAYS = 60
 ETF_ROTATION_LONG_MOMENTUM_DAYS = 120
 ETF_ROTATION_SWITCH_MARGIN = 0.02
 ETF_ROTATION_ALLOC_PCT = 0.30
-ETF_ROTATION_STOP_LOSS_PCT = 0.025
+# ETF 추세전환은 국면 전환(60일선·모멘텀)으로 청산한다. 손절은 급락 대비 재해 손절만 둔다.
+ETF_ROTATION_STOP_LOSS_PCT = 0.05
+# 재해 손절 5% × 배정 30% = 계좌 1.5%. 개별주 0.7%와 별도로 ETF 추세전환에만 적용한다.
+ETF_MAX_RISK_PER_TRADE_PCT = 0.015
 ETF_MAX_ADVERSE_ENTRY_GAP_PCT = 0.03  # 전일 종가 대비 -3% 초과 역방향 갭은 회복 전 진입 금지
-ETF_ROTATION_TRAILING_TRIGGER = 0.060  # ETF 추세전환은 +6%부터 고점 추적
-ETF_ROTATION_TRAILING_GAP = 0.015      # 활성화 후 최고가 대비 1.5% 간격
-SECTOR_ETF_ENABLED = True
+SECTOR_ETF_ENABLED = False  # 다중자산 ETF와 중복되어 비활성화
 SECTOR_ETF_ASSETS = {
     "091160": "KODEX 반도체",
     "305720": "KODEX 2차전지산업",
@@ -116,9 +124,9 @@ SECTOR_ETF_STOP_LOSS_PCT = 0.025
 
 # 💡 ATR 기반 동적 손절 및 손익비 규칙 (휩소 노이즈 방어)
 ATR_PERIOD = 14
-ATR_STOP_MULTIPLIER = 1.5      # 변동성(ATR) 기반 동적 손절 배수
+ATR_STOP_MULTIPLIER = 2.0      # 변동성(ATR) 기반 동적 손절 배수: 일중 노이즈 밖으로
 MIN_STOP_LOSS_PCT = 0.025      # 최소 손절선 2.5% (과매도 바닥권 일중 흔들림 노이즈 방어)
-MAX_STOP_LOSS_PCT = 0.040      # 최대 손절선 4.0% (과도한 손실 캡)
+MAX_STOP_LOSS_PCT = 0.060      # 최대 손절선 6.0%: 수량은 0.7% 위험 기준으로 자동 축소
 MIN_RISK_REWARD_RATIO = 2.0    # 진입 신호의 기준 보상폭 산출용
 
 # 청산 및 리스크 관리 기본값
@@ -130,10 +138,11 @@ MAX_HOLD_DAYS = 7              # 최대 보유일 (7거래일 경과 시 타임�
 MAX_PROFIT_HOLD_DAYS = 14      # 수익 중이지만 추적 미활성인 포지션의 연장 한도
 
 # 💡 거래비용 및 슬리피지 보수적 반영 규칙
-TRANSACTION_TAX_PCT = 0.0018   # 증권거래세 0.18%
+TRANSACTION_TAX_PCT = 0.0020   # 2026년 증권거래세(농특세 포함) 0.20%
 BROKER_COMMISSION_PCT = 0.00015 # 키움증권 온라인 위탁수수료 0.015%
-SLIPPAGE_ESTIMATE_PCT = 0.0010 # 시장가 진입/청산 슬리피지 0.10% 보수적 추정
-TOTAL_ROUNDTRIP_COST_PCT = TRANSACTION_TAX_PCT + (BROKER_COMMISSION_PCT * 2) + (SLIPPAGE_ESTIMATE_PCT * 2) # 왕복 총비용 약 0.41%
+SLIPPAGE_ESTIMATE_PCT = 0.0025 # 중소형주 시장가 진입/청산 슬리피지 0.25% 보수적 추정
+ETF_SLIPPAGE_ESTIMATE_PCT = 0.0005 # LP가 있는 대형 ETF 슬리피지 0.05%
+TOTAL_ROUNDTRIP_COST_PCT = TRANSACTION_TAX_PCT + (BROKER_COMMISSION_PCT * 2) + (SLIPPAGE_ESTIMATE_PCT * 2) # 왕복 총비용 약 0.73%
 
 # 자금 관리 규칙
 MAX_ALLOC_PER_STOCK = 0.35     # 1종목당 계좌 총자산의 최대 35%
