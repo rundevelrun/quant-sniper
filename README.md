@@ -1,6 +1,6 @@
 # Quant Sniper
 
-<p align="center"><img src="assets/banner.svg" alt="Quant Sniper: 가장 큰 리스크는 나의 손 · 코어 50%, 추세전환 30%, 대기자금 10%, 현금 10%" width="100%"></p>
+<p align="center"><img src="assets/banner.svg" alt="Quant Sniper: 가장 큰 리스크는 나의 손 · 코어 50%, 추세전환 30%, 대기자금 18%, 현금 2%" width="100%"></p>
 
 <p align="center"><b>
 <a href="https://github.com/rundevelrun/quant-sniper/tree/dashboard">Dashboard</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#한눈에-보기">한눈에 보기</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#백테스트-근거-2017-01--2026-11">백테스트</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#운영-시간표">운영 시간표</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#대시보드와-모니터링">설치</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="LICENSE">License</a>
@@ -22,8 +22,8 @@
 |---|---|---:|---|
 | 코어 | 고정 비중 자산배분(배당주·나스닥·채권·금·달러), 월 1회 리밸런싱 | 50% | 🟢 |
 | 추세 | 다중자산 ETF 추세전환(8종 중 가장 강한 1종목) | 최대 30% | 🟢 |
-| 대기 | 남는 현금을 CD금리 ETF에 보관 | 나머지 | 🟢 |
-| 현금 | 버퍼 | 10% | 🟢 |
+| 대기 | 남는 현금과 버퍼를 CD금리 ETF에 보관(매수 시 먼저 매도) | 약 18% | 🟢 |
+| 현금 | 실제 현금 | 2% | 🟢 |
 | 개별주 | RSI·VBO 신규 매수 | - | ⚪ 비활성(보유분만 청산 감시) |
 
 **설계 원칙**: 규칙 우선 · 확인 못 하면 주문 안 함(fail closed) · 전일 확정 데이터만 사용 · 증권사 체결 기준 기록 · 수익보다 생존 우선 · 상태 공개
