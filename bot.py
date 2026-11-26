@@ -42,7 +42,7 @@ from config import (
     PARKING_VALUE_HAIRCUT_PCT,
     CORE_ALLOCATION_ENABLED, CORE_ALLOCATION_PCT, CORE_TARGETS,
     CORE_REBALANCE_START_TIME, CORE_REBALANCE_END_TIME,
-    CORE_MIN_TRADE_PCT, CORE_ONE_SHARE_TOLERANCE,
+    CORE_MIN_TRADE_PCT, CORE_ONE_SHARE_TOLERANCE, CORE_FLOW_REBALANCE_PCT,
     SECTOR_ETF_ENABLED, SECTOR_ETF_ASSETS, SECTOR_ETF_MA_PERIOD,
     SECTOR_ETF_SLOPE_DAYS, SECTOR_ETF_BAND_PCT,
     SECTOR_ETF_SHORT_MOMENTUM_DAYS, SECTOR_ETF_LONG_MOMENTUM_DAYS,
@@ -74,6 +74,8 @@ CORE_STATE_FILE = os.path.join(BASE_DIR, "core_state.json")
 DISPLAY_QUOTE_MAX_AGE_SECONDS = 6 * 3600
 # 장중 재시작 후 실시간 정규장 체결을 기다리는 최대 시간(이후에는 기존 장외 처리).
 STARTUP_LIVE_WAIT_SECONDS = 90
+# 보유 포지션 청산 판단에 쓰는 시세 허용 나이(주문 진입은 15초 기준 유지).
+EXIT_QUOTE_MAX_AGE_SECONDS = 60
 # 사용자가 지정한 종목별 이익 청산가. 예: {"003530": {"min_price": 3460}}
 EXIT_OVERRIDE_FILE = os.path.join(BASE_DIR, "exit_overrides.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
@@ -1191,6 +1193,10 @@ def restore_daily_account_metrics(api, risk_state, today_str):
     )
     if external_flow:
         opening_assets = max(0.0, opening_assets + external_flow)
+        flow_core_state = load_json(CORE_STATE_FILE, {})
+        if mark_flow_rebalance(flow_core_state, external_flow, current_assets):
+            save_json(CORE_STATE_FILE, flow_core_state)
+            print(f"[ACCOUNT] 외부 입출금 {external_flow:+,.0f}원: 다음 창에서 코어 리밸런싱")
     peak_assets, drawdown, multiplier, _ = account_drawdown_controls(
         current_assets, float(risk_state.get("peak_assets") or current_assets)
         + external_flow
@@ -1392,8 +1398,25 @@ def is_core_rebalance_window(now=None):
     return start <= now <= end
 
 def core_rebalance_due(core_state, now):
-    """이번 달에 아직 비중을 맞추지 않았으면 True(최초 실행 포함)."""
-    return (core_state or {}).get("last_rebalance_month") != now.strftime("%Y-%m")
+    """이번 달에 아직 비중을 맞추지 않았거나 큰 입출금이 있었으면 True."""
+    core_state = core_state or {}
+    return (
+        core_state.get("last_rebalance_month") != now.strftime("%Y-%m")
+        or bool(core_state.get("flow_rebalance_pending"))
+    )
+
+def mark_flow_rebalance(core_state, external_flow, current_assets):
+    """계좌 대비 큰 입출금이면 다음 리밸런싱 창에서 코어를 다시 맞추도록 표시한다."""
+    flow = abs(float(external_flow or 0))
+    assets = float(current_assets or 0)
+    if not CORE_ALLOCATION_ENABLED or assets <= 0:
+        return False
+    if flow < assets * CORE_FLOW_REBALANCE_PCT:
+        return False
+    if core_state.get("flow_rebalance_pending"):
+        return False
+    core_state["flow_rebalance_pending"] = True
+    return True
 
 def core_desired_shares(target_value, price, current_shares, min_trade_value):
     """목표 금액에 맞는 정수 수량. 차이가 작으면 현재 수량을 유지해 잦은 매매를 막는다."""
@@ -2397,6 +2420,11 @@ def run_trading_loop():
                     risk_state.get("account_baseline"), account
                 )
                 if external_flow:
+                    if mark_flow_rebalance(core_state, external_flow, current_assets):
+                        save_json(CORE_STATE_FILE, core_state)
+                        record_dashboard_event(
+                            "CORE", reason="큰 입출금 감지: 코어 리밸런싱 예약",
+                        )
                     opening_assets = max(0.0, float(opening_assets) + external_flow)
                     peak_assets = max(
                         float(current_assets), float(peak_assets or 0) + external_flow
@@ -2915,7 +2943,8 @@ def run_trading_loop():
                     is_mim_position or is_rotation_position or is_sector_position
                 ):
                     continue
-                quote = realtime.quote(pos["code"])
+                # 체결이 뜸한 종목도 청산 판단을 건너뛰지 않도록 최근 60초 체결가까지 인정한다.
+                quote = realtime.quote(pos["code"], EXIT_QUOTE_MAX_AGE_SECONDS)
                 if not quote:
                     risk_reasons.append(f"{name} 실시간 시세 없음")
                     print(f"[{now_str}] [RISK] {name} 실시간 시세가 없어 청산 판단을 보류합니다.")
@@ -3449,6 +3478,7 @@ def run_trading_loop():
                         print(f"[{now_str}] [CRITICAL] {failure_reason}; 신규주문 중단")
                     else:
                         core_state["last_rebalance_month"] = now.strftime("%Y-%m")
+                        core_state.pop("flow_rebalance_pending", None)
                         save_json(CORE_STATE_FILE, core_state)
                         print(f"[{now_str}] [CORE] 이번 달 코어 자산배분 리밸런싱 완료")
 

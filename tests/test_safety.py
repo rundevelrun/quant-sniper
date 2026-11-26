@@ -16,7 +16,7 @@ from bot import (
     git_commit_and_push, is_entry_window, is_stock_entry_window,
     stock_entry_block_reason,
     apply_core_fill, core_code_conflicts, core_dashboard_info,
-    exit_override_reason, remember_core_last_prices, position_weight_pcts, dashboard_weight_cell,
+    exit_override_reason, remember_core_last_prices, mark_flow_rebalance, position_weight_pcts, dashboard_weight_cell,
     dashboard_holding_count_label, dashboard_long_term_rows,
     core_desired_shares, core_rebalance_due, core_shares,
     is_core_rebalance_window, plan_core_rebalance,
@@ -1417,6 +1417,19 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(state["holdings"]["319640"]["last_price"], 20965)
         self.assertFalse(remember_core_last_prices(state, {"319640": None}))
         self.assertNotIn("102110", state["holdings"])
+
+
+    def test_large_external_flow_schedules_core_rebalance(self):
+        import datetime as dt
+        now = dt.datetime(2026, 11, 27, 10, 30)
+        state = {"last_rebalance_month": "2026-11"}
+        self.assertFalse(core_rebalance_due(state, now))
+        self.assertFalse(mark_flow_rebalance(state, 20000, 340000))  # 10% 미만
+        self.assertTrue(mark_flow_rebalance(state, 340000, 680000))   # 입금
+        self.assertTrue(core_rebalance_due(state, now))
+        self.assertFalse(mark_flow_rebalance(state, 340000, 680000))  # 이미 예약
+        state.pop("flow_rebalance_pending")
+        self.assertTrue(mark_flow_rebalance(state, -100000, 600000))  # 출금도 대상
 
 
 if __name__ == "__main__":
