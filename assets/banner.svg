@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-label="Quant Sniper: 코어 50%, 추세전환 30%, 대기자금 10%, 현금 10%">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#13233d"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#22d3ee" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#22d3ee" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="360" rx="24" fill="url(#bg)"/>
+  <rect width="1200" height="360" rx="24" fill="url(#grid)"/>
+
+  <!-- trend line -->
+  <polyline points="440,338 520,330 590,334 660,318 730,322 800,304 870,308 940,290 1010,294 1080,276 1160,268"
+            fill="none" stroke="url(#line)" stroke-width="2.5" stroke-linejoin="round"/>
+
+  <!-- reticle + allocation ring -->
+  <g transform="translate(220,180)">
+    <circle r="150" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="1"/>
+    <g transform="rotate(-90)" fill="none" stroke-width="26">
+      <!-- circumference 2*pi*110 = 691.15 -->
+      <circle r="110" stroke="#60a5fa" stroke-dasharray="341.6 349.6" stroke-dashoffset="0"/>
+      <circle r="110" stroke="#f472b6" stroke-dasharray="203.3 487.8" stroke-dashoffset="-345.6"/>
+      <circle r="110" stroke="#34d399" stroke-dasharray="65.1 626.0" stroke-dashoffset="-552.9"/>
+      <circle r="110" stroke="#94a3b8" stroke-dasharray="65.1 626.0" stroke-dashoffset="-622.0"/>
+    </g>
+    <g stroke="#22d3ee" stroke-width="2" stroke-linecap="round">
+      <line x1="-170" y1="0" x2="-82" y2="0"/>
+      <line x1="82" y1="0" x2="170" y2="0"/>
+      <line x1="0" y1="-170" x2="0" y2="-82"/>
+      <line x1="0" y1="82" x2="0" y2="170"/>
+    </g>
+    <circle r="62" fill="none" stroke="#22d3ee" stroke-opacity="0.5" stroke-width="1.5"/>
+    <circle r="4" fill="#22d3ee"/>
+  </g>
+
+  <!-- title -->
+  <g font-family="Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Segoe UI', sans-serif">
+    <text x="440" y="118" fill="#f8fafc" font-size="64" font-weight="800" letter-spacing="1">QUANT SNIPER</text>
+    <text x="442" y="158" fill="#cbd5e1" font-size="22">규칙이 사고, 규칙이 판다. 확인 못 하면 쏘지 않는다.</text>
+
+    <g font-size="18" fill="#e2e8f0">
+      <rect x="442" y="196" width="14" height="14" rx="3" fill="#60a5fa"/>
+      <text x="464" y="209">코어 자산배분 50%</text>
+      <rect x="652" y="196" width="14" height="14" rx="3" fill="#f472b6"/>
+      <text x="674" y="209">ETF 추세전환 30%</text>
+      <rect x="862" y="196" width="14" height="14" rx="3" fill="#34d399"/>
+      <text x="884" y="209">대기자금 10%</text>
+      <rect x="1040" y="196" width="14" height="14" rx="3" fill="#94a3b8"/>
+      <text x="1062" y="209">현금 10%</text>
+    </g>
+
+    <text x="442" y="252" fill="#94a3b8" font-size="15">Kiwoom REST · WebSocket  |  Fail-closed  |  Backtest 2017–2026: 연 9.5% · 최대 낙폭 -15.7%</text>
+  </g>
+</svg>
