@@ -16,7 +16,8 @@ from bot import (
     git_commit_and_push, is_entry_window, is_stock_entry_window,
     stock_entry_block_reason,
     apply_core_fill, core_code_conflicts, core_dashboard_info,
-    exit_override_reason, remember_core_last_prices, mark_flow_rebalance, position_weight_pcts, dashboard_weight_cell,
+    exit_override_reason, remember_core_last_prices, mark_flow_rebalance,
+    restore_dashboard_context, position_weight_pcts, dashboard_weight_cell,
     dashboard_holding_count_label, dashboard_long_term_rows,
     core_desired_shares, core_rebalance_due, core_shares,
     is_core_rebalance_window, plan_core_rebalance,
@@ -1430,6 +1431,14 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse(mark_flow_rebalance(state, 340000, 680000))  # 이미 예약
         state.pop("flow_rebalance_pending")
         self.assertTrue(mark_flow_rebalance(state, -100000, 600000))  # 출금도 대상
+
+
+    def test_restore_dashboard_context_keeps_display_keys_only(self):
+        saved = {"etf_rotation": {"regime": "asset"}, "core": {"enabled": True},
+                 "status": "running", "parking": None, "market_regimes": {}}
+        restored = restore_dashboard_context(saved)
+        self.assertEqual(set(restored), {"etf_rotation", "core"})
+        self.assertEqual(restore_dashboard_context(None), {})
 
 
 if __name__ == "__main__":

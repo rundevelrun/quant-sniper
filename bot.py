@@ -296,6 +296,22 @@ def position_weight_pcts(positions, realtime, total_assets):
             weights[name] = round(shares * price / total_assets * 100, 1)
     return weights
 
+RESTORABLE_DASHBOARD_KEYS = (
+    "etf_rotation", "sector_etf", "market_regimes", "market_favorable",
+    "core", "parking", "tradeability", "universe_date", "universe_source",
+    "universe_count", "universe_symbols", "stock_entry_block_reason",
+    "daily_return_pct", "cumulative_return_pct", "twr_return_pct",
+    "account_drawdown_pct", "last_account_sync", "last_external_flow",
+)
+
+def restore_dashboard_context(saved_state):
+    """재시작 직후(특히 장외) 대시보드가 비지 않도록 직전 게시 상태를 복원한다."""
+    saved_state = saved_state or {}
+    return {
+        key: saved_state[key] for key in RESTORABLE_DASHBOARD_KEYS
+        if saved_state.get(key) not in (None, {}, [])
+    }
+
 def dashboard_long_term_rows(context):
     """보유 포지션 표에 함께 보여 줄 코어·대기자금 보유분(비중·수익률만)."""
     context = context or {}
@@ -2125,6 +2141,7 @@ def run_trading_loop():
     except Exception:
         running_commit = "unknown"
     dashboard_context = {
+        **restore_dashboard_context(load_json(DASHBOARD_STATE_FILE, {})),
         "commit_hash": running_commit,
         "entry_size_multiplier": 1.0,
         "intraday_surge_count": 0,
@@ -2346,6 +2363,23 @@ def run_trading_loop():
                     save_json(RISK_FILE, closed_risk_state)
                     dashboard_context["last_account_sync"] = now_str
                     dashboard_dirty = True
+                # 장외에도 코어·비중을 마지막 확인가 기준으로 갱신한다.
+                closed_baseline = (load_json(RISK_FILE, {}) or {}).get("account_baseline") or {}
+                closed_total_assets = float(closed_baseline.get("total_assets") or 0)
+                if closed_total_assets > 0:
+                    closed_core_state = load_json(CORE_STATE_FILE, {})
+                    closed_prices = {
+                        code: (realtime.quote(code, DISPLAY_QUOTE_MAX_AGE_SECONDS) or {}).get("price")
+                        or (closed_baseline.get("positions", {}).get(code) or {}).get("current_price")
+                        for code in CORE_TARGETS
+                    }
+                    dashboard_context["core"] = core_dashboard_info(
+                        closed_core_state, closed_prices, closed_total_assets,
+                    )
+                    dashboard_context["position_weights"] = position_weight_pcts(
+                        closed_positions, realtime, closed_total_assets,
+                    )
+                    dashboard_context["exit_overrides"] = load_json(EXIT_OVERRIDE_FILE, {})
                 realtime_connected, _ = realtime.is_healthy()
                 startup_wait_done = time.time() - dashboard_started_at >= 60
                 should_publish = (
