@@ -1330,13 +1330,13 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(core_desired_shares(75000, 26000, 0, 15000), 3)
 
     def test_core_plan_sells_before_buys_and_skips_unaffordable(self):
-        prices = {"102110": 73000, "367380": 26000, "365780": 87000,
+        prices = {"161510": 20830, "458730": 15010, "367380": 26000, "365780": 87000,
                   "319640": 20000, "329750": 12500}
         plan = plan_core_rebalance(1_000_000, prices, {})
         self.assertEqual(
             [(side, code, qty) for side, code, _, qty, _ in plan],
             [("buy", "365780", 2), ("buy", "319640", 4), ("buy", "367380", 3),
-             ("buy", "329750", 6), ("buy", "102110", 1)],
+             ("buy", "329750", 6), ("buy", "161510", 2), ("buy", "458730", 2)],
         )
         held = {"holdings": {"365780": {"shares": 5, "avg_price": 87000}}}
         plan = plan_core_rebalance(1_000_000, prices, held)
@@ -1344,7 +1344,7 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(plan[0][3], 3)
         # 소액 계좌에서는 1주가 목표의 1.5배를 넘는 종목을 건너뛴다.
         small = plan_core_rebalance(300_000, prices, {})
-        self.assertNotIn("102110", [code for _, code, _, _, _ in small])
+        self.assertNotIn("161510", [code for _, code, _, _, _ in small])
         # 시세가 하나라도 없으면 계획을 만들지 않는다.
         self.assertIsNone(plan_core_rebalance(1_000_000, {**prices, "319640": None}, {}))
 
