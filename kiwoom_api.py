@@ -409,12 +409,13 @@ class KiwoomRestAPI:
             amount = abs(_number(row.get("trde_amt")) or _number(row.get("exct_amt")))
             if not amount:
                 continue
-            direction = str(row.get("io_tp_nm", "")) + str(row.get("trde_kind_nm", ""))
-            sign = -1 if "출금" in direction else 1
+            # 거래종류명은 "입출금"이라 방향 판단에 쓰지 않는다. 적요·입출구분명으로 판단.
+            direction = f"{row.get('io_tp_nm', '')} {row.get('rmrk_nm', '')}"
+            sign = -1 if ("출금" in direction and "입금" not in direction) else 1
             flows.append({
                 "id": f"{row.get('trde_dt', ymd)}-{row.get('trde_no', '')}-{row.get('proc_tm', '')}",
                 "amount": sign * amount,
-                "memo": f"{row.get('rmrk_nm', '')} {row.get('trde_kind_nm', '')}".strip(),
+                "memo": f"{row.get('rmrk_nm', '')} {row.get('io_tp_nm', '')}".strip(),
             })
         return flows
 
