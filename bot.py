@@ -1432,6 +1432,16 @@ def plan_core_rebalance(total_assets, prices, core_state):
     buys.sort(key=lambda item: item[3] * item[4], reverse=True)
     return sells + buys
 
+def remember_core_last_prices(core_state, prices):
+    """보유 코어 종목의 마지막 확인가를 갱신한다. 변경이 있으면 True."""
+    changed = False
+    for code, item in core_holdings(core_state).items():
+        price = float((prices or {}).get(code) or 0)
+        if price > 0 and float(item.get("last_price") or 0) != price:
+            item["last_price"] = price
+            changed = True
+    return changed
+
 def apply_core_fill(core_state, side, code, filled_qty, fill_price):
     """코어 체결을 로컬 장부에 반영한다(평균단가 유지)."""
     core_state = dict(core_state or {})
@@ -3488,13 +3498,15 @@ def run_trading_loop():
                 dashboard_context["position_weights"] = position_weight_pcts(
                     load_json(POSITIONS_FILE, {}), realtime, refreshed_total_assets,
                 )
+                display_core_prices = {
+                    code: (realtime.quote(code, DISPLAY_QUOTE_MAX_AGE_SECONDS) or {}).get("price")
+                    for code in CORE_TARGETS
+                }
+                # 재시작 직후 실시간 캐시가 비어도 마지막 확인가로 표시하도록 장부에 남긴다.
+                if remember_core_last_prices(core_state, display_core_prices):
+                    save_json(CORE_STATE_FILE, core_state)
                 dashboard_context["core"] = core_dashboard_info(
-                    core_state,
-                    {
-                        code: (realtime.quote(code, DISPLAY_QUOTE_MAX_AGE_SECONDS) or {}).get("price")
-                        for code in CORE_TARGETS
-                    },
-                    refreshed_total_assets,
+                    core_state, display_core_prices, refreshed_total_assets,
                 )
                 dashboard_context["parking"] = parking_dashboard_info(
                     parking,
