@@ -3138,6 +3138,7 @@ def run_trading_loop():
                         "shares": pos["shares"],
                         "entry_price": buy_p,
                         "exit_price": actual_exit_price,
+                        "signal_price": float(curr_p),  # 주문 직전 실시간가(슬리피지 측정용)
                         "price_source": "broker_execution",
                         "gross_return_pct": round(gross_ret_pct, 2),
                         "net_return_pct": round(net_ret_pct, 2),
@@ -3446,6 +3447,7 @@ def run_trading_loop():
                             "code": code,
                             "shares": filled_qty,
                             "entry_price": fill_price,
+                            "signal_price": float(entry_p),  # 주문 직전 실시간가(슬리피지 측정용)
                             "stop_loss_pct": sig.get("stop_loss_pct", STOP_LOSS_PCT),
                             "take_profit_pct": sig.get("take_profit_pct", TAKE_PROFIT_PCT),
                             "strategy": sig["strategy"],
