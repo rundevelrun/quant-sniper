@@ -106,6 +106,10 @@ ETF_ROTATION_ALLOC_PCT = 0.30  # 코어 자산배분 50%와 함께 운용(조합
 ETF_ROTATION_STOP_LOSS_PCT = 0.05
 # 재해 손절 5% × 배정 30% = 계좌 1.5%. 개별주 0.7%와 별도로 ETF 추세전환에만 적용한다.
 ETF_MAX_RISK_PER_TRADE_PCT = 0.015
+# 인버스는 하락장 급반등에 손절선 아래로 갭이 나기 쉬워 신규 진입 비중을 절반으로 제한한다.
+# (2017-2026 실전 ETF·2007-2026 프록시 모두 수익은 비슷하고 급락일 손실은 축소)
+ETF_INVERSE_CODES = {"114800"}
+ETF_INVERSE_MAX_ALLOC_PCT = 0.15
 ETF_MAX_ADVERSE_ENTRY_GAP_PCT = 0.03  # 전일 종가 대비 -3% 초과 역방향 갭은 회복 전 진입 금지
 SECTOR_ETF_ENABLED = False  # 다중자산 ETF와 중복되어 비활성화
 SECTOR_ETF_ASSETS = {

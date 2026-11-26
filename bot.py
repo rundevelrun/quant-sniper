@@ -33,7 +33,7 @@ from config import (
     ETF_ROTATION_ASSETS, ETF_ROTATION_SHORT_MOMENTUM_DAYS,
     ETF_ROTATION_LONG_MOMENTUM_DAYS, ETF_ROTATION_SWITCH_MARGIN,
     ETF_ROTATION_ALLOC_PCT, ETF_ROTATION_STOP_LOSS_PCT,
-    ETF_MAX_ADVERSE_ENTRY_GAP_PCT,
+    ETF_MAX_ADVERSE_ENTRY_GAP_PCT, ETF_INVERSE_CODES, ETF_INVERSE_MAX_ALLOC_PCT,
     ETF_MAX_RISK_PER_TRADE_PCT, ETF_SLIPPAGE_ESTIMATE_PCT,
     STOCK_ENTRY_START_TIME, STOCK_ENTRY_END_TIME,
     BLOCK_STOCK_ENTRIES_WHEN_INVERSE, STOCK_STRATEGIES_ENABLED,
@@ -1075,6 +1075,34 @@ def account_snapshot_baseline(account):
         },
     }
 
+DISTRIBUTION_KEYWORDS = ("배당", "분배", "이자", "이용료")
+
+def resolve_external_flow(api, risk_state, today_str, estimate, current_assets):
+    """잔고 추정 입출금을 증권사 입출금 내역으로 확인해 분배금·이자를 제외한다.
+
+    - 내역 조회 실패 시 기존 추정치를 그대로 쓴다(이전 동작).
+    - 같은 내역을 두 번 반영하지 않도록 처리한 내역 번호를 날짜별로 기억한다.
+    - 새 내역이 없는데 추정치가 계좌의 1%를 넘으면 추정치를 쓴다(반영 지연 대비).
+    """
+    if not estimate:
+        return 0.0
+    flows = api.get_cash_flows(today_str) if hasattr(api, "get_cash_flows") else None
+    if flows is None:
+        return estimate
+    seen_state = risk_state.get("seen_cash_flows") or {}
+    seen = set(seen_state.get("ids", [])) if seen_state.get("date") == today_str else set()
+    new = [f for f in flows if f["id"] not in seen]
+    external = sum(
+        f["amount"] for f in new
+        if not any(word in f["memo"] for word in DISTRIBUTION_KEYWORDS)
+    )
+    if not new and abs(estimate) > 0.01 * float(current_assets or 0):
+        return estimate
+    risk_state["seen_cash_flows"] = {
+        "date": today_str, "ids": sorted(seen | {f["id"] for f in new}),
+    }
+    return float(external)
+
 def estimate_external_cash_flow(previous_snapshot, account):
     """보유수량이 같은 두 계좌 스냅샷에서 가격 변동으로 설명되지 않는 입출금을 추정한다."""
     if not previous_snapshot:
@@ -1249,8 +1277,10 @@ def restore_daily_account_metrics(api, risk_state, today_str):
     if not account.get("ok"):
         return {}, False
     current_assets = float(account.get("total_assets") or opening_assets)
-    external_flow = estimate_external_cash_flow(
-        risk_state.get("account_baseline"), account
+    external_flow = resolve_external_flow(
+        api, risk_state, today_str,
+        estimate_external_cash_flow(risk_state.get("account_baseline"), account),
+        current_assets,
     )
     if external_flow:
         opening_assets = max(0.0, opening_assets + external_flow)
@@ -2112,6 +2142,12 @@ def exit_override_reason(overrides, code, price):
         return f"사용자 지정 이익 청산 ({min_price:,.0f}원 이상)"
     return None
 
+def rotation_alloc_pct(code):
+    """추세전환 신규 진입 비중: 인버스는 별도 상한을 적용한다."""
+    if str(code) in ETF_INVERSE_CODES:
+        return min(ETF_ROTATION_ALLOC_PCT, ETF_INVERSE_MAX_ALLOC_PCT)
+    return ETF_ROTATION_ALLOC_PCT
+
 def etf_rotation_traded_today(trades, today):
     return any(
         trade.get("strategy") == ETF_ROTATION_STRATEGY
@@ -2495,8 +2531,10 @@ def run_trading_loop():
 
             if account.get("ok") and opening_assets:
                 current_assets = account.get("total_assets", opening_assets)
-                external_flow = estimate_external_cash_flow(
-                    risk_state.get("account_baseline"), account
+                external_flow = resolve_external_flow(
+                    api, risk_state, today_str,
+                    estimate_external_cash_flow(risk_state.get("account_baseline"), account),
+                    current_assets,
                 )
                 if external_flow:
                     if mark_flow_rebalance(core_state, external_flow, current_assets):
@@ -2884,7 +2922,7 @@ def run_trading_loop():
                         "score": -2.0,
                         "entry_price": float(rotation_quote["price"]),
                         "size_multiplier": 1.0,
-                        "max_investment_pct": ETF_ROTATION_ALLOC_PCT,
+                        "max_investment_pct": rotation_alloc_pct(rotation_target_code),
                         "stop_loss_pct": ETF_ROTATION_STOP_LOSS_PCT,
                         "risk_pct": ETF_MAX_RISK_PER_TRADE_PCT,
                         "take_profit_pct": 1.0,

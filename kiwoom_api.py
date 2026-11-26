@@ -389,6 +389,34 @@ class KiwoomRestAPI:
         }
         return selected
 
+    def get_cash_flows(self, date_str):
+        """kt00015(tp=1 입출금)로 당일 입출금 내역을 조회한다. 실패 시 None.
+
+        반환: [{"id", "amount"(입금 +, 출금 -), "memo"}]
+        """
+        ymd = str(date_str).replace("-", "")
+        data = self._post_domestic("/api/dostk/acnt", "kt00015", {
+            "strt_dt": ymd, "end_dt": ymd, "tp": "1", "gds_tp": "0",
+            "dmst_stex_tp": "%", "stk_cd": "", "crnc_cd": "", "frgn_stex_code": "",
+            "qry_sort_tp": "2",
+        })
+        if str(data.get("return_code")) != "0":
+            print(f"[ERR] 입출금 내역 조회 실패: {data.get('return_msg')}")
+            return None
+        flows = []
+        for row in data.get("trst_ovrl_trde_prps_array") or []:
+            amount = abs(_number(row.get("trde_amt")) or _number(row.get("exct_amt")))
+            if not amount:
+                continue
+            direction = str(row.get("io_tp_nm", "")) + str(row.get("trde_kind_nm", ""))
+            sign = -1 if "출금" in direction else 1
+            flows.append({
+                "id": f"{row.get('trde_dt', ymd)}-{row.get('trde_no', '')}-{row.get('proc_tm', '')}",
+                "amount": sign * amount,
+                "memo": f"{row.get('rmrk_nm', '')} {row.get('trde_kind_nm', '')}".strip(),
+            })
+        return flows
+
     def get_account_snapshot(self):
         """kt00018 기준 실계좌 보유수량/평균매입가/평가자산을 조회한다."""
         token = self.get_token()

@@ -17,7 +17,7 @@ from bot import (
     stock_entry_block_reason,
     apply_core_fill, core_code_conflicts, core_dashboard_info,
     exit_override_reason, remember_core_last_prices, mark_flow_rebalance,
-    restore_dashboard_context, status_badge, position_weight_pcts, dashboard_weight_cell,
+    restore_dashboard_context, status_badge, resolve_external_flow, rotation_alloc_pct, position_weight_pcts, dashboard_weight_cell,
     dashboard_holding_count_label, dashboard_long_term_rows,
     core_desired_shares, core_rebalance_due, core_shares,
     is_core_rebalance_window, plan_core_rebalance,
@@ -1448,6 +1448,30 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("장외", status_badge("running", False)["message"])
         self.assertEqual(status_badge("halted", True)["message"], "HALTED")
         self.assertEqual(status_badge("halted", True)["schemaVersion"], 1)
+
+
+    def test_resolve_external_flow_excludes_distributions_and_dedupes(self):
+        class Api:
+            def __init__(self, flows):
+                self.flows = flows
+            def get_cash_flows(self, date):
+                return self.flows
+        flows = [{"id": "1", "amount": 50000, "memo": "이체입금"},
+                 {"id": "2", "amount": 120, "memo": "배당금입금"}]
+        state = {}
+        self.assertEqual(resolve_external_flow(Api(flows), state, "2026-12-01", 50120, 400000), 50000)
+        # 같은 날 다시 조회해도 이미 반영한 내역은 다시 세지 않는다.
+        self.assertEqual(resolve_external_flow(Api(flows), state, "2026-12-01", 120, 400000), 0)
+        # 분배금만 들어온 날은 외부 입금이 아니다.
+        self.assertEqual(resolve_external_flow(
+            Api([{"id": "9", "amount": 300, "memo": "분배금입금"}]), {}, "2026-12-02", 300, 400000), 0)
+        # 조회 실패 시 기존 추정치를 쓴다.
+        self.assertEqual(resolve_external_flow(Api(None), {}, "2026-12-02", 7000, 400000), 7000)
+        self.assertEqual(resolve_external_flow(Api(flows), {}, "2026-12-02", 0, 400000), 0)
+
+    def test_inverse_rotation_alloc_is_capped(self):
+        self.assertEqual(rotation_alloc_pct("114800"), 0.15)
+        self.assertEqual(rotation_alloc_pct("069500"), 0.30)
 
 
 if __name__ == "__main__":
