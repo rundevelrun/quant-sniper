@@ -1702,7 +1702,7 @@ def check_git_permission():
     try:
         res = subprocess.run(["git", "push", "--dry-run"], cwd=repo_dir, capture_output=True, text=True)
         if res.returncode == 0:
-            print("[GIT] ✅ 깃허브 푸시 권한 정상 확인 (피클 비서 실시간 연동 준비 완료)")
+            print("[GIT] ✅ 깃허브 푸시 권한 정상 확인")
             return True
         else:
             print(f"[GIT WARN] ⚠️ 깃허브 푸시 권한 없음: {res.stderr.strip() or '인증 필요'}")
@@ -1713,7 +1713,7 @@ def check_git_permission():
         return False
 
 def git_commit_and_push(commit_msg):
-    """체결 내역 발생 시 깃허브 자동 푸시 (피클 비서 보고 연동)"""
+    """체결 내역 발생 시 깃허브 자동 푸시"""
     repo_dir = os.path.dirname(os.path.abspath(__file__))
     try:
         subprocess.run(["git", "add", "trades.json", "positions.json"], cwd=repo_dir,
@@ -3617,7 +3617,7 @@ def run_trading_loop():
             except Exception as research_error:
                 print(f"[RESEARCH] 로컬 분석 데이터 저장 실패: {research_error}")
 
-            # 정상↔위험 상태가 바뀌면 30분 주기를 기다리지 않고 즉시 피클AI에 공개한다.
+            # 정상↔위험 상태가 바뀌면 30분 주기를 기다리지 않고 즉시 대시보드에 공개한다.
             current_state = (status, detail)
             if git_ok and current_state != last_published_state:
                 event_type = "ERROR" if status == "error" else "RISK" if status == "halted" else "SYSTEM"
