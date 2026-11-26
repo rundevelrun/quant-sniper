@@ -2528,7 +2528,14 @@ def run_trading_loop():
                     if trading_halted:
                         risk_reasons.append(f"지속 중인 거래 중단: {risk_state.get('reason', 'unknown')}")
                 else:
-                    opening_assets = account.get("total_assets") or None
+                    # 전일 마지막 계좌 스냅샷을 기준으로 시작해야 장외(밤사이·장전) 입출금을
+                    # 아래 입출금 보정 단계에서 잡을 수 있다. 오늘 첫 스냅샷으로 기준을 덮으면
+                    # 장전 입금이 수익으로 잡히고 코어 재조정도 예약되지 않는다.
+                    prev_baseline = risk_state.get("account_baseline") or {}
+                    opening_assets = (
+                        float(prev_baseline.get("total_assets") or 0)
+                        or account.get("total_assets") or None
+                    )
                     trading_halted = False
                     # 누적 원금·TWR 기준값은 자정 초기화 뒤에도 이어진다.
                     risk_state = {
@@ -2536,7 +2543,7 @@ def run_trading_loop():
                         "date": today_str, "opening_assets": opening_assets,
                         "peak_assets": peak_assets,
                         "halted": False,
-                        "account_baseline": account_snapshot_baseline(account),
+                        "account_baseline": prev_baseline or account_snapshot_baseline(account),
                     }
                     save_json(RISK_FILE, risk_state)
 
