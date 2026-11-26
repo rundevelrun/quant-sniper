@@ -266,6 +266,29 @@ def dashboard_status_label(status):
         return "🔴 오류"
     return f"🟡 {_md(status)}"
 
+def dashboard_weight_cell(weight_pct, target_pct=None):
+    """보유 비중(계좌 평가자산 대비 %) 셀. 코어는 목표 비중을 함께 표시한다."""
+    text = f"{float(weight_pct):.1f}%" if weight_pct is not None else "-"
+    if target_pct is not None:
+        text += f" (목표 {float(target_pct):.1f}%)"
+    return f'<td align="right" nowrap>{html.escape(text)}</td>'
+
+def position_weight_pcts(positions, realtime, total_assets):
+    """매매 포지션별 계좌 대비 비중(%)만 계산한다(금액은 공개하지 않음)."""
+    total_assets = float(total_assets or 0)
+    weights = {}
+    if total_assets <= 0:
+        return weights
+    for name, pos in (positions or {}).items():
+        quote = realtime.quote(pos.get("code", "")) if realtime else None
+        price = float(
+            (quote or {}).get("price") or pos.get("last_price") or pos.get("buy_price") or 0
+        )
+        shares = int(pos.get("shares", 0) or 0)
+        if price > 0 and shares > 0:
+            weights[name] = round(shares * price / total_assets * 100, 1)
+    return weights
+
 def dashboard_long_term_rows(context):
     """보유 포지션 표에 함께 보여 줄 코어·대기자금 보유분(비중·수익률만)."""
     context = context or {}
@@ -281,6 +304,8 @@ def dashboard_long_term_rows(context):
                 "return_pct": item.get("return_pct"),
                 "asset_key": f"core-{item.get('code', 'unknown')}",
                 "days_held": item.get("days_held"),
+                "weight_pct": item.get("weight_pct"),
+                "target_pct": item.get("target_pct"),
                 "exit_plan": "월 1회 리밸런싱(목표 비중 초과분만 매도)",
             })
     parking = context.get("parking") or {}
@@ -290,6 +315,8 @@ def dashboard_long_term_rows(context):
             "strategy": "대기자금",
             "return_pct": parking.get("return_pct"),
             "asset_key": f"parking-{parking.get('code', 'unknown')}",
+            "weight_pct": parking.get("weight_pct"),
+            "target_pct": None,
             "exit_plan": "매수 자금 부족 시 필요한 만큼만 매도",
         })
     return rows
@@ -413,9 +440,10 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "", "## 현재 보유 포지션", "",
         '<table width="100%">',
         '<thead><tr>',
-        '<th width="18%">종목</th><th width="16%">전략</th>',
-        f'<th width="{RETURN_COLUMN_WIDTH}" nowrap align="center">수익률</th><th width="10%">보유 기간</th>',
-        '<th width="12%">현재 보호</th><th width="34%">청산 계획</th>',
+        '<th width="17%">종목</th><th width="14%">전략</th>',
+        f'<th width="{RETURN_COLUMN_WIDTH}" nowrap align="center">수익률</th>',
+        '<th width="12%" nowrap>비중</th><th width="8%">보유 기간</th>',
+        '<th width="11%">현재 보호</th><th width="30%">청산 계획</th>',
         '</tr></thead><tbody>',
     ]
     if positions:
@@ -448,9 +476,16 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             else:
                 display_strategy = strategy
                 exit_plan = "ATR 손절 · +4% 보호 · +8% 추적 · 타임스탑"
+                override_price = float(
+                    ((context.get("exit_overrides") or {}).get(str(pos.get("code"))) or {})
+                    .get("min_price") or 0
+                )
+                if override_price > 0:
+                    exit_plan += f" · 이익 청산 {override_price:,.0f}원"
             protection = (
                 "고점 추적 ON" if pos.get("trailing_active")
                 else "수익 보호 ON" if pos.get("trailing_stop_price")
+                else "재해 손절" if strategy in {ETF_ROTATION_STRATEGY, SECTOR_ETF_STRATEGY}
                 else "초기 손절"
             )
             lines.append(
@@ -458,6 +493,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 f'<td>{html.escape(str(display_name))}</td>'
                 f'<td>{html.escape(str(display_strategy))}</td>'
                 f'{dashboard_return_cell(return_pct, f"position-{pos.get('code', 'unknown')}", context)}'
+                f'{dashboard_weight_cell((context.get("position_weights") or {}).get(name))}'
                 f'<td align="right">{int(pos.get("days_held", 0))}일</td>'
                 f'<td>{html.escape(protection)}</td>'
                 f'<td>{html.escape(exit_plan)}</td>'
@@ -470,13 +506,14 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             f'<td>{html.escape(str(row["name"]))}</td>'
             f'<td>{html.escape(row["strategy"])}</td>'
             f'{dashboard_return_cell(row["return_pct"], row["asset_key"], context)}'
+            f'{dashboard_weight_cell(row.get("weight_pct"), row.get("target_pct"))}'
             f'<td align="right">{f"{int(row["days_held"])}일" if row.get("days_held") else "-"}</td>'
             '<td>없음(장기 보유)</td>'
             f'<td>{html.escape(row["exit_plan"])}</td>'
             '</tr>'
         )
     if not positions and not long_term_rows:
-        lines.append('<tr><td colspan="6">보유 종목 없음</td></tr>')
+        lines.append('<tr><td colspan="7">보유 종목 없음</td></tr>')
     lines += ['</tbody></table>']
     if not realtime_ok and realtime_error:
         lines += ["", f"> WebSocket 상태: {_md(realtime_error)}"]
@@ -3444,6 +3481,10 @@ def run_trading_loop():
                 )
             if account.get("ok"):
                 refreshed_total_assets = float(account.get("total_assets") or 0)
+                dashboard_context["exit_overrides"] = load_json(EXIT_OVERRIDE_FILE, {})
+                dashboard_context["position_weights"] = position_weight_pcts(
+                    load_json(POSITIONS_FILE, {}), realtime, refreshed_total_assets,
+                )
                 dashboard_context["core"] = core_dashboard_info(
                     core_state,
                     {

@@ -16,7 +16,7 @@ from bot import (
     git_commit_and_push, is_entry_window, is_stock_entry_window,
     stock_entry_block_reason,
     apply_core_fill, core_code_conflicts, core_dashboard_info,
-    exit_override_reason,
+    exit_override_reason, position_weight_pcts, dashboard_weight_cell,
     dashboard_holding_count_label, dashboard_long_term_rows,
     core_desired_shares, core_rebalance_due, core_shares,
     is_core_rebalance_window, plan_core_rebalance,
@@ -1396,6 +1396,19 @@ class SafetyTests(unittest.TestCase):
         self.assertIsNone(exit_override_reason(overrides, "214150", 99999))
         self.assertIsNone(exit_override_reason({}, "003530", 3460))
         self.assertIsNone(exit_override_reason(overrides, "003530", None))
+
+
+    def test_position_weights_are_percent_only(self):
+        class RT:
+            def quote(self, code):
+                return {"price": 1400} if code == "114800" else None
+        positions = {"인버스": {"code": "114800", "shares": 69, "buy_price": 1404},
+                     "한화": {"code": "003530", "shares": 8, "last_price": 3450}}
+        weights = position_weight_pcts(positions, RT(), 340000)
+        self.assertEqual(weights, {"인버스": 28.4, "한화": 8.1})
+        self.assertEqual(position_weight_pcts(positions, RT(), 0), {})
+        self.assertIn("25.5% (목표 20.0%)", dashboard_weight_cell(25.5, 20.0))
+        self.assertIn(">-<", dashboard_weight_cell(None))
 
 
 if __name__ == "__main__":
