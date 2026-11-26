@@ -19,3 +19,5 @@ venv/
 .DS_Store
 backtest/.cache/
 backtest/.cache/
+core_state.json
+parking_state.json
