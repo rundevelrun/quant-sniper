@@ -72,6 +72,8 @@ CORE_STATE_FILE = os.path.join(BASE_DIR, "core_state.json")
 # 대시보드 표시용 시세 허용 나이. 주문 판단은 15초 기준을 그대로 쓰고,
 # 표시만 체결이 뜸한 ETF도 최근 체결가로 수익률·비중을 보여 준다.
 DISPLAY_QUOTE_MAX_AGE_SECONDS = 6 * 3600
+# 장중 재시작 후 실시간 정규장 체결을 기다리는 최대 시간(이후에는 기존 장외 처리).
+STARTUP_LIVE_WAIT_SECONDS = 90
 # 사용자가 지정한 종목별 이익 청산가. 예: {"003530": {"min_price": 3460}}
 EXIT_OVERRIDE_FILE = os.path.join(BASE_DIR, "exit_overrides.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
@@ -2295,6 +2297,15 @@ def run_trading_loop():
                     
             # 장 운영 시간 확인
             if not CURRENT_MARKET_OPEN:
+                # 장중 재시작 직후에는 실시간 정규장 체결이 아직 안 들어와 장외로 보일 수 있다.
+                # 이때 CLOSED 대시보드를 게시하지 않고 실시간 확인을 잠시 기다린다.
+                if (
+                    is_market_open(now, live_status=True)
+                    and time.time() - dashboard_started_at < STARTUP_LIVE_WAIT_SECONDS
+                ):
+                    update_health_status(status="running", detail="재시작 후 실시간 시세 확인 중")
+                    time.sleep(5)
+                    continue
                 print(f"[{now_str}] 정규장 운영 시간 외입니다. 대기 중...")
                 # 휴장일에도 루프 생존 신호를 남겨 watchdog이 재시작을 반복하지 않게 한다.
                 update_health_status(status="running", detail="정규장 운영 시간 외")
