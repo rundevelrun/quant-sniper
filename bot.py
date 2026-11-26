@@ -39,7 +39,7 @@ from config import (
     BLOCK_STOCK_ENTRIES_WHEN_INVERSE, STOCK_STRATEGIES_ENABLED,
     PARKING_ENABLED, PARKING_ETF_CODE, PARKING_ETF_NAME,
     PARKING_START_TIME, PARKING_END_TIME, PARKING_MIN_KRW,
-    PARKING_VALUE_HAIRCUT_PCT,
+    PARKING_VALUE_HAIRCUT_PCT, PARKING_CASH_RESERVE_PCT,
     CORE_ALLOCATION_ENABLED, CORE_ALLOCATION_PCT, CORE_TARGETS,
     CORE_REBALANCE_START_TIME, CORE_REBALANCE_END_TIME,
     CORE_MIN_TRADE_PCT, CORE_ONE_SHARE_TOLERANCE, CORE_FLOW_REBALANCE_PCT,
@@ -1375,10 +1375,14 @@ def account_with_parking_cash(account, parking, price):
     return {**account, "cash": float(account.get("cash") or 0) + value}
 
 def parking_buy_shares(total_assets, cash, price):
-    """10% 현금 버퍼를 남기고 넣을 수 있는 대기자금 ETF 수량."""
+    """실제 현금은 계좌의 2%만 남기고 넣을 수 있는 대기자금 ETF 수량.
+
+    10% 현금 버퍼도 대기자금 ETF로 운용한다. 매수 시에는 대기자금을 먼저 팔아
+    자금을 마련하므로(대기자금은 현금으로 취급) 버퍼 역할은 그대로 유지된다.
+    """
     if not PARKING_ENABLED or price <= 0:
         return 0
-    idle = entry_cash_after_reserve(total_assets, cash)
+    idle = max(0.0, float(cash) - float(total_assets) * PARKING_CASH_RESERVE_PCT)
     if idle < max(PARKING_MIN_KRW, price):
         return 0
     return int(idle // (price * (1.0 + PARKING_VALUE_HAIRCUT_PCT)))

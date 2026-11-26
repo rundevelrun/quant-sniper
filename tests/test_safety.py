@@ -1257,11 +1257,13 @@ class SafetyTests(unittest.TestCase):
             stock_entry_block_reason(datetime.datetime(2026, 11, 26, 10, 0), None, {}),
         )
 
-    def test_parking_keeps_ten_percent_cash_buffer(self):
-        # 총자산 300,000 중 현금 200,000: 버퍼 30,000을 남기고 170,000만 편입
+    def test_parking_keeps_two_percent_cash(self):
+        # 총자산 300,000 중 현금 200,000: 2%(6,000)만 남기고 194,000 편입 → 3주
         self.assertEqual(parking_buy_shares(300000, 200000, 55000), 3)
-        # 버퍼를 빼면 1주도 안 되면 편입하지 않음
+        # 현금 60,000: 2%를 빼도 54,000이라 55,000원짜리 1주는 못 산다
         self.assertEqual(parking_buy_shares(300000, 60000, 55000), 0)
+        # 10% 버퍼였다면 못 샀을 금액도 이제 편입된다(390,000 중 현금 64,000 → 1주)
+        self.assertEqual(parking_buy_shares(390000, 64000, 55000), 1)
 
     def test_parking_counts_as_cash_for_strategy_sizing(self):
         parking = {"shares": 3, "avg_price": 55000}

@@ -155,6 +155,7 @@ PARKING_ETF_NAME = "TIGER CD금리투자KIS(합성)"
 PARKING_START_TIME = "15:12"    # 개별주 진입(~15:10) 이후, 종가 동시호가(15:20) 이전
 PARKING_END_TIME = "15:18"
 PARKING_MIN_KRW = 30_000        # 이보다 작은 여유 현금은 넣지 않는다
+PARKING_CASH_RESERVE_PCT = 0.02  # 대기자금 편입 후에도 남길 실제 현금(10% 버퍼는 대기자금 ETF로 운용)
 PARKING_VALUE_HAIRCUT_PCT = 0.002  # 매도 시 수수료·호가 여유
 
 # 💡 ATR 기반 동적 손절 및 손익비 규칙 (휩소 노이즈 방어)
