@@ -44,7 +44,7 @@
   <!-- title -->
   <g font-family="Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Segoe UI', sans-serif">
     <text x="440" y="118" fill="#f8fafc" font-size="64" font-weight="800" letter-spacing="1">QUANT SNIPER</text>
-    <text x="442" y="158" fill="#cbd5e1" font-size="22">규칙이 사고, 규칙이 판다. 확인 못 하면 쏘지 않는다.</text>
+    <text x="442" y="158" fill="#cbd5e1" font-size="22">가장 큰 리스크는 나의 손</text>
 
     <g font-size="18" fill="#e2e8f0">
       <rect x="442" y="196" width="14" height="14" rx="3" fill="#60a5fa"/>
