@@ -16,6 +16,7 @@ from bot import (
     git_commit_and_push, is_entry_window, is_stock_entry_window,
     stock_entry_block_reason,
     apply_core_fill, core_code_conflicts, core_dashboard_info,
+    dashboard_holding_count_label, dashboard_long_term_rows,
     core_desired_shares, core_rebalance_due, core_shares,
     is_core_rebalance_window, plan_core_rebalance,
     account_with_parking_cash, apply_parking_fill, is_parking_window,
@@ -1294,7 +1295,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_parking_dashboard_hides_amounts(self):
         info = parking_dashboard_info({"shares": 3, "avg_price": 55000}, 55550, 500000)
-        self.assertEqual(set(info), {"name", "weight_pct", "return_pct"})
+        self.assertEqual(set(info), {"name", "code", "weight_pct", "return_pct"})
         self.assertEqual(info["weight_pct"], 33.3)
         self.assertEqual(info["return_pct"], 1.0)
         self.assertIsNone(parking_dashboard_info({}, 55550, 500000))
@@ -1359,10 +1360,26 @@ class SafetyTests(unittest.TestCase):
                  "last_rebalance_month": "2026-12"}
         info = core_dashboard_info(state, {"319640": 21000}, 1_000_000)
         gold = next(item for item in info["assets"] if "골드" in item["name"])
-        self.assertEqual(set(gold), {"name", "target_pct", "weight_pct", "return_pct"})
+        self.assertEqual(set(gold), {"name", "code", "held", "target_pct", "weight_pct", "return_pct"})
         self.assertEqual(gold["target_pct"], 7.5)
         self.assertEqual(gold["weight_pct"], 6.3)
         self.assertEqual(gold["return_pct"], 5.0)
+
+    def test_positions_table_includes_core_and_parking_holdings(self):
+        state = {"holdings": {"319640": {"shares": 3, "avg_price": 20000}},
+                 "last_rebalance_month": "2026-12"}
+        context = {
+            "core": core_dashboard_info(state, {"319640": 21000}, 1_000_000),
+            "parking": parking_dashboard_info(
+                {"shares": 3, "avg_price": 55000}, 55550, 500000
+            ),
+        }
+        rows = dashboard_long_term_rows(context)
+        self.assertEqual([row["strategy"] for row in rows], ["코어 자산배분", "대기자금"])
+        self.assertIn("골드", rows[0]["name"])
+        self.assertEqual(dashboard_holding_count_label({"A": {}}, context),
+                         "매매 1 · 코어 1 · 대기 1")
+        self.assertEqual(dashboard_holding_count_label({}, {}), "매매 0")
 
 
 if __name__ == "__main__":

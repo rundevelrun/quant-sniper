@@ -264,6 +264,46 @@ def dashboard_status_label(status):
         return "🔴 오류"
     return f"🟡 {_md(status)}"
 
+def dashboard_long_term_rows(context):
+    """보유 포지션 표에 함께 보여 줄 코어·대기자금 보유분(비중·수익률만)."""
+    context = context or {}
+    rows = []
+    core = context.get("core") or {}
+    if core.get("enabled"):
+        for item in core.get("assets", []):
+            if not item.get("held"):
+                continue
+            rows.append({
+                "name": item.get("name", "-"),
+                "strategy": "코어 자산배분",
+                "return_pct": item.get("return_pct"),
+                "asset_key": f"core-{item.get('code', 'unknown')}",
+                "exit_plan": "월 1회 리밸런싱(목표 비중 초과분만 매도)",
+            })
+    parking = context.get("parking") or {}
+    if parking:
+        rows.append({
+            "name": parking.get("name", "-"),
+            "strategy": "대기자금",
+            "return_pct": parking.get("return_pct"),
+            "asset_key": f"parking-{parking.get('code', 'unknown')}",
+            "exit_plan": "매수 자금 부족 시 필요한 만큼만 매도",
+        })
+    return rows
+
+def dashboard_holding_count_label(positions, context):
+    """상단 보유 수: 매매 포지션과 코어·대기자금을 구분해 표시한다."""
+    core_count = sum(
+        1 for item in ((context or {}).get("core") or {}).get("assets", [])
+        if item.get("held")
+    ) if ((context or {}).get("core") or {}).get("enabled") else 0
+    parts = [f"매매 {len(positions)}"]
+    if core_count:
+        parts.append(f"코어 {core_count}")
+    if (context or {}).get("parking"):
+        parts.append("대기 1")
+    return " · ".join(parts)
+
 def render_dashboard(status, detail, positions, realtime, events, now=None, context=None):
     """GitHub에서 바로 읽을 수 있는 운영 대시보드 Markdown을 생성한다."""
     now = now or datetime.datetime.now()
@@ -349,7 +389,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f"| {'🟢 OPEN' if CURRENT_MARKET_OPEN else '🔴 CLOSED'} "
         f"| {regime_label} "
         f"| {'가능' if context.get('entry_allowed', False) else '중단'} "
-        f"| {len(positions)} |",
+        f"| {dashboard_holding_count_label(positions, context)} |",
         "",
         f"> {_md(detail)} · 키움 실시간 {'정상' if realtime_ok else '연결 대기'}"
         f" · 마지막 계좌 확인 {_md(context.get('last_account_sync', '-'))}",
@@ -420,7 +460,19 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 f'<td>{html.escape(exit_plan)}</td>'
                 '</tr>'
             )
-    else:
+    long_term_rows = dashboard_long_term_rows(context)
+    for row in long_term_rows:
+        lines.append(
+            '<tr>'
+            f'<td>{html.escape(str(row["name"]))}</td>'
+            f'<td>{html.escape(row["strategy"])}</td>'
+            f'{dashboard_return_cell(row["return_pct"], row["asset_key"], context)}'
+            '<td align="right">-</td>'
+            '<td>없음(장기 보유)</td>'
+            f'<td>{html.escape(row["exit_plan"])}</td>'
+            '</tr>'
+        )
+    if not positions and not long_term_rows:
         lines.append('<tr><td colspan="6">보유 종목 없음</td></tr>')
     lines += ['</tbody></table>']
     if not realtime_ok and realtime_error:
@@ -1251,6 +1303,7 @@ def parking_dashboard_info(parking, price, total_assets):
     avg = float(parking.get("avg_price") or 0)
     return {
         "name": PARKING_ETF_NAME,
+        "code": PARKING_ETF_CODE,
         "weight_pct": (
             round(shares * price / total_assets * 100, 1)
             if price > 0 and total_assets > 0 else None
@@ -1380,6 +1433,8 @@ def core_dashboard_info(core_state, prices, total_assets):
         avg = float(item.get("avg_price") or 0)
         rows.append({
             "name": name,
+            "code": code,
+            "held": shares > 0,
             "target_pct": round(CORE_ALLOCATION_PCT * weight * 100, 1),
             "weight_pct": (
                 round(shares * price / total_assets * 100, 1)
