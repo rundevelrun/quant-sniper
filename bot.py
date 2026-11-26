@@ -2194,6 +2194,20 @@ def run_trading_loop():
     api = KiwoomRestAPI()
     realtime = KiwoomRealtimeFeed(api.get_token)
     realtime.start()
+    # 입출금 내역 API 응답 형식 점검(조회 전용, 금액·적요만 로컬 로그에 남김).
+    try:
+        check_end = datetime.date.today()
+        check_flows = api.get_cash_flows(
+            check_end.isoformat(), (check_end - datetime.timedelta(days=30)).isoformat()
+        )
+        if check_flows is None:
+            print("[CASHFLOW] 입출금 내역 조회 실패: 잔고 추정 방식으로 동작", flush=True)
+        else:
+            print(f"[CASHFLOW] 최근 30일 입출금 {len(check_flows)}건 확인", flush=True)
+            for flow in check_flows[-5:]:
+                print(f"[CASHFLOW]   {flow['id'][:8]} {flow['amount']:+,.0f} {flow['memo']}", flush=True)
+    except Exception as exc:
+        print(f"[CASHFLOW] 입출금 내역 점검 오류: {exc}", flush=True)
     last_screened_date = None
     active_universe = DEFAULT_UNIVERSE
     universe_metadata = {}

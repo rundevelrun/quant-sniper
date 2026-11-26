@@ -389,14 +389,15 @@ class KiwoomRestAPI:
         }
         return selected
 
-    def get_cash_flows(self, date_str):
-        """kt00015(tp=1 입출금)로 당일 입출금 내역을 조회한다. 실패 시 None.
+    def get_cash_flows(self, date_str, start_str=None):
+        """kt00015(tp=1 입출금)로 입출금 내역을 조회한다. 실패 시 None.
 
         반환: [{"id", "amount"(입금 +, 출금 -), "memo"}]
         """
         ymd = str(date_str).replace("-", "")
+        start = str(start_str or date_str).replace("-", "")
         data = self._post_domestic("/api/dostk/acnt", "kt00015", {
-            "strt_dt": ymd, "end_dt": ymd, "tp": "1", "gds_tp": "0",
+            "strt_dt": start, "end_dt": ymd, "tp": "1", "gds_tp": "0",
             "dmst_stex_tp": "%", "stk_cd": "", "crnc_cd": "", "frgn_stex_code": "",
             "qry_sort_tp": "2",
         })
