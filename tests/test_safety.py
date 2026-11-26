@@ -16,6 +16,7 @@ from bot import (
     git_commit_and_push, is_entry_window, is_stock_entry_window,
     stock_entry_block_reason,
     apply_core_fill, core_code_conflicts, core_dashboard_info,
+    rotation_reentry_override_allows,
     dashboard_holding_count_label, dashboard_long_term_rows,
     core_desired_shares, core_rebalance_due, core_shares,
     is_core_rebalance_window, plan_core_rebalance,
@@ -1381,6 +1382,23 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(dashboard_holding_count_label({"A": {}}, context),
                          "매매 1 · 코어 1 · 대기 1")
         self.assertEqual(dashboard_holding_count_label({}, {}), "매매 0")
+
+
+    def test_reentry_override_only_below_price_and_once(self):
+        from bot import ETF_ROTATION_STRATEGY
+        today = "2026-11-26"
+        override = {"date": today, "code": "114800", "max_price": 1409}
+        sold = [{"timestamp": f"{today} 09:00:32", "type": "SELL",
+                 "strategy": ETF_ROTATION_STRATEGY}]
+        allows = rotation_reentry_override_allows
+        self.assertTrue(allows(override, sold, today, "114800", 1409))
+        self.assertFalse(allows(override, sold, today, "114800", 1410))
+        self.assertFalse(allows(override, sold, today, "069500", 1400))
+        self.assertFalse(allows(override, sold, "2026-11-27", "114800", 1400))
+        self.assertFalse(allows(override, sold, today, "114800", None))
+        rebought = sold + [{"timestamp": f"{today} 11:00:00", "type": "BUY",
+                            "strategy": ETF_ROTATION_STRATEGY}]
+        self.assertFalse(allows(override, rebought, today, "114800", 1400))
 
 
 if __name__ == "__main__":
