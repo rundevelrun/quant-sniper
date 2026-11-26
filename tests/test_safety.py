@@ -252,7 +252,8 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("보유 중 매 5분 10초", markdown)
         self.assertIn("00·05·10…분", markdown)
         self.assertIn("## 현재 보유 포지션", markdown)
-        self.assertIn("## 최근 3일 중요 이벤트", markdown)
+        self.assertNotIn("## 최근 3일 중요 이벤트", markdown)
+        self.assertIn("## 청산 전체 기록", markdown)
         self.assertIn("## 전체 성과", markdown)
         self.assertNotIn("계좌번호", markdown)
         self.assertNotIn("10,000", markdown)
@@ -294,7 +295,7 @@ class SafetyTests(unittest.TestCase):
         self.assertNotIn("800원", performance)
         self.assertNotIn("40원", performance)
 
-    def test_dashboard_lists_ten_latest_closed_trades_without_amounts(self):
+    def test_dashboard_lists_all_closed_trades_without_amounts(self):
         class Feed:
             def is_healthy(self):
                 return True, ""
@@ -311,11 +312,11 @@ class SafetyTests(unittest.TestCase):
             "running", "정규장 운영 시간 외", {}, Feed(), [],
             context={"all_trades": trades},
         )
-        closed = markdown.split("## 최근 청산 내역", 1)[1].split("## ", 1)[0]
+        closed = markdown.split("## 청산 전체 기록", 1)[1].split("## ", 1)[0]
         self.assertIn("<th>진입일</th><th>청산일</th>", closed)
         self.assertIn('<th width="76" nowrap align="center">순수익률</th>', closed)
         self.assertIn("종목11", closed)
-        self.assertNotIn(">종목1</td>", closed)
+        self.assertIn(">종목1</td>", closed)
         self.assertNotIn("12,345", closed)
         self.assertNotIn("10,000", closed)
         self.assertNotIn("99주", closed)
@@ -409,7 +410,8 @@ class SafetyTests(unittest.TestCase):
             now=__import__("datetime").datetime(2026, 11, 17, 10, 0),
         )
         self.assertNotIn("봇 프로세스 시작", markdown)
-        self.assertIn("계좌 조회 실패", markdown)
+        # 이벤트 표는 제거됨(리스크는 현재 상태 줄과 알림으로 확인).
+        self.assertNotIn("## 최근 3일 중요 이벤트", markdown)
 
     def test_position_size_obeys_allocation_and_trade_risk(self):
         # 30만원, 2만원 주식, 3% 손절: 35% 비중 한도는 5주, 위험 한도는 3주다.

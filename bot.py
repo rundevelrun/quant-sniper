@@ -663,21 +663,6 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         '</tr></tbody></table>',
     ]
     lines += [
-        "", "## 최근 3일 중요 이벤트", "",
-        "| 시각 | 유형 | 종목 | 사유 | 반복 |",
-        "|---|---|---|---|---:|",
-    ]
-    visible_types = {"BUY", "SELL", "PARK", "CORE", "RISK", "ERROR"}
-    visible = [e for e in recent_events if e.get("type") in visible_types]
-    for event in reversed(visible[-20:]):
-        lines.append(
-            f"| {_md(event.get('timestamp', '')).replace('T', ' ')} | {_md(event.get('type'))} "
-            f"| {_md(event.get('name') or event.get('code') or '-')} "
-            f"| {_md(event.get('reason', '-'))} | {int(event.get('count', 1))} |"
-        )
-    if not visible:
-        lines.append("| - | - | 기록 없음 | - | - |")
-    lines += [
         "", "## 전체 성과", "",
         '<table width="100%">',
         '<thead><tr>',
@@ -696,7 +681,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         f'<td align="center">{max_loss_streak}회</td>',
         f'<td align="center">{f"{aggregate_cost_rate:.2f}%" if aggregate_cost_rate is not None else "-"}</td>',
         '</tr></tbody></table>',
-        "", "## 최근 청산 내역", "",
+        "", "## 청산 전체 기록", "",
         '<table width="100%">',
         '<thead><tr>',
         '<th>진입일</th><th>청산일</th><th>종목</th><th>전략</th><th>보유 기간</th>',
@@ -706,7 +691,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     ]
     recent_sells = sorted(
         all_sells, key=lambda trade: str(trade.get("timestamp", "")), reverse=True
-    )[:10]
+    )
     all_trades = context.get("all_trades", [])
     for index, trade in enumerate(recent_sells):
         exit_timestamp = str(trade.get("timestamp", ""))
@@ -743,9 +728,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "현재 보유 포지션",
         "계좌 안전장치",
         "전체 성과",
-        "최근 청산 내역",
+        "청산 전체 기록",
         "감시 종목 전체",
-        "최근 3일 중요 이벤트",
     ])
     lines += ["", "> 계좌 잔액·원화 손익 등 민감한 계좌정보는 공개하지 않습니다.", ""]
     return "\n".join(lines)
