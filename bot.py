@@ -479,23 +479,6 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         lines += ["", f"> WebSocket 상태: {_md(realtime_error)}"]
 
     mim_state = context.get("mim_state", {})
-    core = context.get("core") or {}
-    if core.get("enabled"):
-        lines += [
-            "", "## 코어 자산배분", "",
-            f"> 계좌의 {CORE_ALLOCATION_PCT*100:.0f}%를 고정 비중으로 보유 · 월 1회 리밸런싱"
-            f" · 최근 리밸런싱 {_md(core.get('last_rebalance_month') or '대기')}", "",
-            "| 자산 | 목표 비중 | 현재 비중 | 수익률 |",
-            "|---|---:|---:|---:|",
-        ]
-        for item in core.get("assets", []):
-            weight = item.get("weight_pct")
-            ret = item.get("return_pct")
-            lines.append(
-                f"| {_md(item.get('name'))} | {item.get('target_pct', 0):.1f}% "
-                f"| {f'{weight:.1f}%' if weight is not None else '-'} "
-                f"| {f'{ret:+.2f}%' if ret is not None else '-'} |"
-            )
     lines += [
         "", "## 전략별 현재 판단", "",
         "| 전략 | 상태 | 대상 | 판단 근거 |",
