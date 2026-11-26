@@ -69,9 +69,6 @@ DASHBOARD_STATE_FILE = os.path.join(BASE_DIR, "dashboard_state.json")
 MIM_STATE_FILE = os.path.join(BASE_DIR, "mim_state.json")
 PARKING_STATE_FILE = os.path.join(BASE_DIR, "parking_state.json")
 CORE_STATE_FILE = os.path.join(BASE_DIR, "core_state.json")
-# 사용자가 지정한 1회성 당일 재진입 허용(지정 가격 이하일 때만). 예:
-# {"date": "2026-11-26", "code": "114800", "max_price": 1409}
-REENTRY_OVERRIDE_FILE = os.path.join(BASE_DIR, "reentry_override.json")
 # 사용자가 지정한 종목별 이익 청산가. 예: {"003530": {"min_price": 3460}}
 EXIT_OVERRIDE_FILE = os.path.join(BASE_DIR, "exit_overrides.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
@@ -494,8 +491,6 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         rotation_trade = etf_tradeability_by_code.get(rotation.get("target_code"), {})
         rotation_status = (
             "보유 중" if rotation.get("held")
-            else f"재진입 대기({rotation['reentry_max_price']:,}원 이하)"
-            if rotation.get("traded_today") and rotation.get("reentry_max_price")
             else "당일 재진입 제한" if rotation.get("traded_today")
             else "역방향 갭 회복 대기" if rotation.get("entry_gap_blocked")
             else "매수 불가" if rotation.get("regime") == "asset"
@@ -1969,25 +1964,6 @@ def sector_etf_trend_selection(candles_by_code, benchmark_candles,
         ),
     }
 
-def rotation_reentry_override_allows(override, trades, today, code, price):
-    """당일 재진입 제한을 사용자 지정 1회에 한해 푼다.
-
-    날짜·종목이 일치하고, 현재가가 지정 가격 이하이며, 오늘 추세전환 매수가
-    아직 없을 때만 허용한다(재매수 후 다시 청산되면 재진입하지 않는다).
-    """
-    override = override or {}
-    if override.get("date") != today or str(override.get("code")) != str(code):
-        return False
-    max_price = float(override.get("max_price") or 0)
-    if max_price <= 0 or price is None or float(price) <= 0 or float(price) > max_price:
-        return False
-    return not any(
-        trade.get("strategy") == ETF_ROTATION_STRATEGY
-        and trade.get("type") == "BUY"
-        and str(trade.get("timestamp", "")).startswith(today)
-        for trade in trades
-    )
-
 def exit_override_reason(overrides, code, price):
     """사용자 지정 이익 청산가 이상이면 청산 사유를 반환한다."""
     item = (overrides or {}).get(str(code)) or {}
@@ -2706,21 +2682,7 @@ def run_trading_loop():
             rotation_quote = (
                 realtime.quote(rotation_target_code) if rotation_target_code else None
             )
-            reentry_override = load_json(REENTRY_OVERRIDE_FILE, {})
-            reentry_override_active = (
-                rotation_blocked_today
-                and reentry_override.get("date") == today_str
-                and str(reentry_override.get("code")) == str(rotation_target_code)
-            )
-            if rotation_blocked_today and rotation_reentry_override_allows(
-                reentry_override, trades, today_str, rotation_target_code,
-                rotation_quote.get("price") if rotation_quote else None,
-            ):
-                rotation_blocked_today = False
             dashboard_context["etf_rotation"]["traded_today"] = rotation_blocked_today
-            dashboard_context["etf_rotation"]["reentry_max_price"] = (
-                reentry_override.get("max_price") if reentry_override_active else None
-            )
             rotation_gap_allowed, rotation_gap_pct = etf_entry_gap_status(
                 rotation_detail.get("previous_close"),
                 rotation_quote.get("price") if rotation_quote else None,
