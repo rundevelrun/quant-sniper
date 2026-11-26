@@ -151,16 +151,6 @@
 - 재현: `backtest/etf_rotation_backtest.py`(기본), `backtest/etf_robustness.py`(900조합), `backtest/etf_diversify.py`(자산 확대·분산), 전체 계좌는 `backtest/fetch_stocks.py` 후 `backtest/full_backtest.py`
 - 실전 선택·청산 함수를 그대로 호출했고 계좌 낙폭 규칙도 반영했습니다. 데이터는 네이버 금융 일봉(분배금 미반영)이며 과거 성과는 미래 수익을 보장하지 않습니다.
 
----|---:|---:|---:|
-| **ETF 50% + 대기자금 (현재 운용)** | 9.9% | 0.86% | -14.7% |
-| ETF 30% + 대기자금 (이전 배정) | 6.7% | 0.56% | -9.6% |
-| ETF 30% + 개별주 RSI·VBO + 대기자금 | 2.9% | 0.24% | -13.0% |
-| KODEX 200 보유 (2016-06~) | 13.2% | 1.37% | -50.5% |
-
-- 실전 선택·청산 함수를 그대로 호출해 계산했고, 계좌 낙폭 규칙도 반영했습니다.
-- 재현: `python3 backtest/etf_rotation_backtest.py`, 전체 계좌는 `python3 backtest/fetch_stocks.py` 후 `python3 backtest/full_backtest.py`
-- 데이터는 네이버 금융 일봉(분배금 미반영)이며 과거 성과는 미래 수익을 보장하지 않습니다.
-
 ---
 
 ## ⚪ 제거된 정책
