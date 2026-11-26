@@ -3360,6 +3360,24 @@ def run_trading_loop():
                         print(f"[{now_str}] [CRITICAL] {failure_reason}")
                 save_json(PARKING_STATE_FILE, parking)
 
+            # 코어·대기자금 주문은 대시보드 정보 계산 이후에 실행되므로,
+            # 같은 루프의 게시에 체결 결과가 반영되도록 다시 계산한다.
+            if account.get("ok"):
+                refreshed_total_assets = float(account.get("total_assets") or 0)
+                dashboard_context["core"] = core_dashboard_info(
+                    core_state,
+                    {
+                        code: (realtime.quote(code) or {}).get("price")
+                        for code in CORE_TARGETS
+                    },
+                    refreshed_total_assets,
+                )
+                dashboard_context["parking"] = parking_dashboard_info(
+                    parking,
+                    parking_reference_price(parking, realtime.quote(PARKING_ETF_CODE)),
+                    refreshed_total_assets,
+                )
+
             # 주문 처리 중 새 영구 안전잠금이 발생했을 수 있으므로 최종 상태를 다시 계산한다.
             loop_halted = trading_halted or account_lookup_failed
             signal_snapshot = (
