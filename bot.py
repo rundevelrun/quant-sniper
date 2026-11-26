@@ -1357,9 +1357,13 @@ def core_desired_shares(target_value, price, current_shares, min_trade_value):
     """목표 금액에 맞는 정수 수량. 차이가 작으면 현재 수량을 유지해 잦은 매매를 막는다."""
     if price <= 0:
         return current_shares
-    desired = int(target_value // price)
-    if desired == 0 and target_value > 0 and price <= target_value * CORE_ONE_SHARE_TOLERANCE:
-        desired = 1
+    ratio = target_value / price
+    if ratio >= 1:
+        # 버림을 쓰면 1.999주가 1주가 되어 경계에서 사고팔기를 반복한다. 가장 가까운 수량을 쓴다.
+        desired = int(ratio + 0.5)
+    else:
+        # 1주 미만 구간은 1주 값이 목표의 허용 배수 이내일 때만 1주를 보유한다.
+        desired = 1 if target_value > 0 and price <= target_value * CORE_ONE_SHARE_TOLERANCE else 0
     if current_shares > 0 and abs(desired - current_shares) * price < min_trade_value:
         return current_shares
     return desired

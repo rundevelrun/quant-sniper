@@ -1320,6 +1320,11 @@ class SafetyTests(unittest.TestCase):
         # 차이가 최소 매매 금액보다 작으면 현재 수량 유지
         self.assertEqual(core_desired_shares(100000, 10000, 9, 15000), 9)
         self.assertEqual(core_desired_shares(100000, 10000, 13, 15000), 10)
+        # 목표가 1.999주 분량이면 2주를 유지한다(버림으로 1주를 팔지 않는다).
+        self.assertEqual(core_desired_shares(25586, 12800, 2, 5117), 2)
+        self.assertEqual(core_desired_shares(25586, 12800, 0, 5117), 2)
+        # 2.5주 이상이면 3주로 반올림한다.
+        self.assertEqual(core_desired_shares(75000, 26000, 0, 15000), 3)
 
     def test_core_plan_sells_before_buys_and_skips_unaffordable(self):
         prices = {"102110": 73000, "367380": 26000, "365780": 87000,
@@ -1327,8 +1332,8 @@ class SafetyTests(unittest.TestCase):
         plan = plan_core_rebalance(1_000_000, prices, {})
         self.assertEqual(
             [(side, code, qty) for side, code, _, qty, _ in plan],
-            [("buy", "365780", 2), ("buy", "329750", 6), ("buy", "102110", 1),
-             ("buy", "319640", 3), ("buy", "367380", 2)],
+            [("buy", "365780", 2), ("buy", "319640", 4), ("buy", "367380", 3),
+             ("buy", "329750", 6), ("buy", "102110", 1)],
         )
         held = {"holdings": {"365780": {"shares": 5, "avg_price": 87000}}}
         plan = plan_core_rebalance(1_000_000, prices, held)
