@@ -69,6 +69,9 @@ DASHBOARD_STATE_FILE = os.path.join(BASE_DIR, "dashboard_state.json")
 MIM_STATE_FILE = os.path.join(BASE_DIR, "mim_state.json")
 PARKING_STATE_FILE = os.path.join(BASE_DIR, "parking_state.json")
 CORE_STATE_FILE = os.path.join(BASE_DIR, "core_state.json")
+# 대시보드 표시용 시세 허용 나이. 주문 판단은 15초 기준을 그대로 쓰고,
+# 표시만 체결이 뜸한 ETF도 최근 체결가로 수익률·비중을 보여 준다.
+DISPLAY_QUOTE_MAX_AGE_SECONDS = 6 * 3600
 # 사용자가 지정한 종목별 이익 청산가. 예: {"003530": {"min_price": 3460}}
 EXIT_OVERRIDE_FILE = os.path.join(BASE_DIR, "exit_overrides.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
@@ -280,7 +283,7 @@ def position_weight_pcts(positions, realtime, total_assets):
     if total_assets <= 0:
         return weights
     for name, pos in (positions or {}).items():
-        quote = realtime.quote(pos.get("code", "")) if realtime else None
+        quote = realtime.quote(pos.get("code", ""), DISPLAY_QUOTE_MAX_AGE_SECONDS) if realtime else None
         price = float(
             (quote or {}).get("price") or pos.get("last_price") or pos.get("buy_price") or 0
         )
@@ -448,7 +451,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
     ]
     if positions:
         for name, pos in positions.items():
-            quote = realtime.quote(pos.get("code", ""))
+            quote = realtime.quote(pos.get("code", ""), DISPLAY_QUOTE_MAX_AGE_SECONDS)
             current = float(
                 quote.get("price", 0) if quote else pos.get("last_price", 0)
             )
@@ -733,7 +736,7 @@ def build_dashboard_state(status, detail, positions, realtime, render_context, n
     realtime_ok, realtime_error = realtime.is_healthy()
     state_positions = []
     for name, pos in positions.items():
-        quote = realtime.quote(pos.get("code", ""))
+        quote = realtime.quote(pos.get("code", ""), DISPLAY_QUOTE_MAX_AGE_SECONDS)
         current_price = float(
             quote.get("price", 0) if quote else pos.get("last_price", 0)
         ) or None
@@ -2662,7 +2665,7 @@ def run_trading_loop():
                 dashboard_context["core"] = core_dashboard_info(
                     core_state,
                     {
-                        code: (realtime.quote(code) or {}).get("price")
+                        code: (realtime.quote(code, DISPLAY_QUOTE_MAX_AGE_SECONDS) or {}).get("price")
                         for code in CORE_TARGETS
                     },
                     float(account.get("total_assets") or 0),
@@ -3488,14 +3491,14 @@ def run_trading_loop():
                 dashboard_context["core"] = core_dashboard_info(
                     core_state,
                     {
-                        code: (realtime.quote(code) or {}).get("price")
+                        code: (realtime.quote(code, DISPLAY_QUOTE_MAX_AGE_SECONDS) or {}).get("price")
                         for code in CORE_TARGETS
                     },
                     refreshed_total_assets,
                 )
                 dashboard_context["parking"] = parking_dashboard_info(
                     parking,
-                    parking_reference_price(parking, realtime.quote(PARKING_ETF_CODE)),
+                    parking_reference_price(parking, realtime.quote(PARKING_ETF_CODE, DISPLAY_QUOTE_MAX_AGE_SECONDS)),
                     refreshed_total_assets,
                 )
 

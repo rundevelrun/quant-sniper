@@ -229,7 +229,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_dashboard_renders_position_without_sensitive_account_data(self):
         class Feed:
-            def quote(self, code):
+            def quote(self, code, *_):
                 return {"price": 10300}
             def is_healthy(self):
                 return True, ""
@@ -321,7 +321,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_dashboard_uses_saved_last_price_without_realtime_quote(self):
         class Feed:
-            def quote(self, code):
+            def quote(self, code, *_):
                 return None
             def is_healthy(self):
                 return True, ""
@@ -346,7 +346,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_dashboard_lists_all_monitored_symbols_without_sensitive_prices(self):
         class Feed:
-            def quote(self, code):
+            def quote(self, code, *_):
                 return None
             def is_healthy(self):
                 return True, ""
@@ -376,7 +376,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_dashboard_does_not_limit_monitored_symbols_to_ten(self):
         class Feed:
-            def quote(self, code):
+            def quote(self, code, *_):
                 return None
             def is_healthy(self):
                 return True, ""
@@ -393,7 +393,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_dashboard_hides_system_events_but_keeps_actionable_events(self):
         class Feed:
-            def quote(self, code):
+            def quote(self, code, *_):
                 return None
             def is_healthy(self):
                 return True, ""
@@ -648,7 +648,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_dashboard_shows_cumulative_and_twr_without_amounts(self):
         class Feed:
-            def quote(self, code):
+            def quote(self, code, *_):
                 return None
             def is_healthy(self):
                 return True, ""
@@ -844,7 +844,7 @@ class SafetyTests(unittest.TestCase):
                 self.counts.append(count)
                 return [{"date": str(index), "close": 100} for index in range(count)]
         class Feed:
-            def quote(self, code):
+            def quote(self, code, *_):
                 return None
 
         api = Api()
@@ -894,7 +894,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_dashboard_shows_separate_mim_pilot_state(self):
         class Feed:
-            def quote(self, code):
+            def quote(self, code, *_):
                 return None
             def is_healthy(self):
                 return True, ""
@@ -1400,7 +1400,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_position_weights_are_percent_only(self):
         class RT:
-            def quote(self, code):
+            def quote(self, code, *_):
                 return {"price": 1400} if code == "114800" else None
         positions = {"인버스": {"code": "114800", "shares": 69, "buy_price": 1404},
                      "한화": {"code": "003530", "shares": 8, "last_price": 3450}}
