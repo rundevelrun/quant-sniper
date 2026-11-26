@@ -432,7 +432,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         else "계산 대기"
     )
     lines = [
-        "# Quant Sniper Dashboard", "",
+        *DASHBOARD_HEADER_LINES,
         f"> 마지막 갱신: **{now.strftime('%Y-%m-%d %H:%M:%S')} KST**  ",
         "> 갱신 주기: **보유 중 매 5분 10초(00·05·10…분) · 상태/신호/거래 변경 즉시 · 무보유·무변화 시 00분 10초·30분 10초**", "",
         "## 현재 상태", "",
@@ -732,6 +732,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         "감시 종목 전체",
     ])
     lines += ["", "> 계좌 잔액·원화 손익 등 민감한 계좌정보는 공개하지 않습니다.", ""]
+    lines += DASHBOARD_FOOTER_LINES
     return "\n".join(lines)
 
 def build_dashboard_state(status, detail, positions, realtime, render_context, now=None):
@@ -796,6 +797,35 @@ def build_dashboard_state(status, detail, positions, realtime, render_context, n
         "sector_etf": render_context.get("sector_etf", {}),
     }
 
+REPO_URL = "https://github.com/rundevelrun/quant-sniper"
+BANNER_FILE = os.path.join(BASE_DIR, "assets", "banner.svg")
+_NAV_SEP = "&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;"
+DASHBOARD_HEADER_LINES = [
+    '<a name="dashboard-top"></a>',
+    "",
+    '<p align="center"><img src="assets/banner.svg" alt="Quant Sniper" width="100%"></p>',
+    "",
+    '<p align="center"><b>' + _NAV_SEP.join([
+        f'<a href="{REPO_URL}">← 프로젝트 README</a>',
+        f'<a href="{REPO_URL}#한눈에-보기">전략 한눈에 보기</a>',
+        f'<a href="{REPO_URL}#백테스트-근거-2017-01--2026-11">백테스트</a>',
+        f'<a href="{REPO_URL}#운영-시간표">운영 시간표</a>',
+    ]) + "</b></p>",
+    "",
+    '<p align="center"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com'
+    '%2Frundevelrun%2Fquant-sniper%2Fdashboard%2Fbadge.json&style=flat-square" alt="bot status">&nbsp;&nbsp;'
+    '<img src="https://img.shields.io/github/last-commit/rundevelrun/quant-sniper/dashboard'
+    '?style=flat-square&label=heartbeat&color=64748b" alt="heartbeat"><br><br></p>',
+    "",
+]
+DASHBOARD_FOOTER_LINES = [
+    "---",
+    "",
+    '<p align="center"><a href="#dashboard-top">↑ 맨 위로</a>' + _NAV_SEP
+    + f'<a href="{REPO_URL}">← 프로젝트 README</a></p>',
+    "",
+]
+
 def status_badge(status, market_open):
     """README 상태 배지용 shields.io endpoint JSON."""
     if status == "halted":
@@ -848,6 +878,17 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
             input=json.dumps(status_badge(status, CURRENT_MARKET_OPEN), ensure_ascii=False),
             capture_output=True, text=True, check=True,
         ).stdout.strip()
+        asset_tree = None
+        if os.path.exists(BANNER_FILE):
+            banner_blob = subprocess.run(
+                ["git", "hash-object", "-w", BANNER_FILE], cwd=BASE_DIR,
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            asset_tree = subprocess.run(
+                ["git", "mktree"], cwd=BASE_DIR,
+                input=f"100644 blob {banner_blob}\tbanner.svg\n",
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
         svg_entries = []
         for asset_name, svg in sorted(render_context.get("svg_assets", {}).items()):
             svg_blob = subprocess.run(
@@ -869,6 +910,8 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
         )
         if svg_tree:
             tree_input += f"040000 tree {svg_tree}\tsvg\n"
+        if asset_tree:
+            tree_input = f"040000 tree {asset_tree}\tassets\n" + tree_input
         tree = subprocess.run(
             ["git", "mktree"], cwd=BASE_DIR, input=tree_input,
             capture_output=True, text=True, check=True,
