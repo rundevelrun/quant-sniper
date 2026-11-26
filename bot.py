@@ -3446,8 +3446,19 @@ def run_trading_loop():
                         print(f"[{now_str}] [CRITICAL] {failure_reason}")
                 save_json(PARKING_STATE_FILE, parking)
 
-            # 코어·대기자금 주문은 대시보드 정보 계산 이후에 실행되므로,
+            # 코어·대기자금·추세 ETF 주문은 대시보드 정보 계산 이후에 실행되므로,
             # 같은 루프의 게시에 체결 결과가 반영되도록 다시 계산한다.
+            held_strategies = {
+                pos.get("strategy") for pos in load_json(POSITIONS_FILE, {}).values()
+            }
+            if dashboard_context.get("etf_rotation"):
+                dashboard_context["etf_rotation"]["held"] = (
+                    ETF_ROTATION_STRATEGY in held_strategies
+                )
+            if dashboard_context.get("sector_etf"):
+                dashboard_context["sector_etf"]["held"] = (
+                    SECTOR_ETF_STRATEGY in held_strategies
+                )
             if account.get("ok"):
                 refreshed_total_assets = float(account.get("total_assets") or 0)
                 dashboard_context["core"] = core_dashboard_info(
