@@ -124,5 +124,23 @@
     "take_profit_pct": 0.08,
     "strategy": "RSI 과매도 반등",
     "roundtrip_cost_pct": 0.0040999999999999995
+  },
+  {
+    "timestamp": "2026-11-26 09:00:32",
+    "type": "SELL",
+    "name": "KODEX 인버스 추세",
+    "code": "114800",
+    "shares": 70,
+    "entry_price": 1340.0,
+    "exit_price": 1410.0,
+    "price_source": "broker_execution",
+    "gross_return_pct": 5.22,
+    "net_return_pct": 4.98,
+    "cost_fee_krw": 227.0,
+    "net_profit_krw": 4673.0,
+    "reason": "ETF 기존 보호선",
+    "strategy": "시장 ETF 3상태 추세전환",
+    "entry_date": "2026-11-24",
+    "days_held": 3
   }
 ]
