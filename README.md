@@ -1,6 +1,12 @@
 # Quant Sniper
 
-![Quant Sniper: 코어 50%, 추세전환 30%, 대기자금 10%, 현금 10%](assets/banner.svg)
+<p align="center"><img src="assets/banner.svg" alt="Quant Sniper: 가장 큰 리스크는 나의 손 · 코어 50%, 추세전환 30%, 대기자금 10%, 현금 10%" width="100%"></p>
+
+<p align="center"><br><b>
+<a href="https://github.com/rundevelrun/quant-sniper/tree/dashboard">Dashboard</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#한눈에-보기">한눈에 보기</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#백테스트-근거-2017-01--2026-11">백테스트</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#운영-시간표">운영 시간표</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#대시보드와-모니터링">설치</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="LICENSE">License</a>
+</b></p>
+
+<p align="center"><a href="https://github.com/rundevelrun/quant-sniper/tree/dashboard"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frundevelrun%2Fquant-sniper%2Fdashboard%2Fbadge.json&style=flat-square" alt="bot status"></a>&nbsp;&nbsp;<a href="https://github.com/rundevelrun/quant-sniper/tree/dashboard"><img src="https://img.shields.io/github/last-commit/rundevelrun/quant-sniper/dashboard?style=flat-square&label=heartbeat&color=64748b" alt="heartbeat"></a><br><br></p>
 
 > **내가 매수 버튼을 누르는 게 가장 큰 리스크라서 만든 프로젝트.**
 

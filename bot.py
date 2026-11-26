@@ -796,6 +796,18 @@ def build_dashboard_state(status, detail, positions, realtime, render_context, n
         "sector_etf": render_context.get("sector_etf", {}),
     }
 
+def status_badge(status, market_open):
+    """README 상태 배지용 shields.io endpoint JSON."""
+    if status == "halted":
+        message, color = "HALTED", "red"
+    elif status == "error":
+        message, color = "ERROR", "orange"
+    elif market_open:
+        message, color = "LIVE · 장중", "brightgreen"
+    else:
+        message, color = "LIVE · 장외", "blue"
+    return {"schemaVersion": 1, "label": "bot", "message": message, "color": color}
+
 def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
     """대시보드 파일만 부모 없는 단일 커밋으로 origin/dashboard에 교체한다."""
     if not AUTO_GIT_PUSH:
@@ -831,6 +843,11 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
             ["git", "hash-object", "-w", "dashboard_state.json"], cwd=BASE_DIR,
             capture_output=True, text=True, check=True,
         ).stdout.strip()
+        badge_blob = subprocess.run(
+            ["git", "hash-object", "-w", "--stdin"], cwd=BASE_DIR,
+            input=json.dumps(status_badge(status, CURRENT_MARKET_OPEN), ensure_ascii=False),
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
         svg_entries = []
         for asset_name, svg in sorted(render_context.get("svg_assets", {}).items()):
             svg_blob = subprocess.run(
@@ -848,6 +865,7 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
             f"100644 blob {dashboard_blob}\tREADME.md\n"
             f"100644 blob {events_blob}\tdashboard_events.json\n"
             f"100644 blob {state_blob}\tdashboard_state.json\n"
+            f"100644 blob {badge_blob}\tbadge.json\n"
         )
         if svg_tree:
             tree_input += f"040000 tree {svg_tree}\tsvg\n"
@@ -857,7 +875,7 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
         ).stdout.strip()
         commit = subprocess.run(
             ["git", "commit-tree", tree, "-m",
-             "dashboard: current state and rolling 3-day events"],
+             "dashboard: current state"],
             cwd=BASE_DIR, capture_output=True, text=True, check=True,
         ).stdout.strip()
         subprocess.run(
