@@ -72,6 +72,8 @@ CORE_STATE_FILE = os.path.join(BASE_DIR, "core_state.json")
 # 사용자가 지정한 1회성 당일 재진입 허용(지정 가격 이하일 때만). 예:
 # {"date": "2026-11-26", "code": "114800", "max_price": 1409}
 REENTRY_OVERRIDE_FILE = os.path.join(BASE_DIR, "reentry_override.json")
+# 사용자가 지정한 종목별 이익 청산가. 예: {"003530": {"min_price": 3460}}
+EXIT_OVERRIDE_FILE = os.path.join(BASE_DIR, "exit_overrides.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
 RESEARCH_DB_FILE = os.path.join(BASE_DIR, "research_data.db")
 CURRENT_MARKET_OPEN = False
@@ -1986,6 +1988,14 @@ def rotation_reentry_override_allows(override, trades, today, code, price):
         for trade in trades
     )
 
+def exit_override_reason(overrides, code, price):
+    """사용자 지정 이익 청산가 이상이면 청산 사유를 반환한다."""
+    item = (overrides or {}).get(str(code)) or {}
+    min_price = float(item.get("min_price") or 0)
+    if min_price > 0 and price is not None and float(price) >= min_price:
+        return f"사용자 지정 이익 청산 ({min_price:,.0f}원 이상)"
+    return None
+
 def etf_rotation_traded_today(trades, today):
     return any(
         trade.get("strategy") == ETF_ROTATION_STRATEGY
@@ -2936,6 +2946,13 @@ def run_trading_loop():
                         if time_exit_reason:
                             exit_price = curr_p
                             exit_reason = time_exit_reason
+                    if not exit_price:
+                        override_reason = exit_override_reason(
+                            load_json(EXIT_OVERRIDE_FILE, {}), pos.get("code"), curr_p
+                        )
+                        if override_reason:
+                            exit_price = curr_p
+                            exit_reason = override_reason
                     
                 if exit_price:
                     if account.get("ok"):

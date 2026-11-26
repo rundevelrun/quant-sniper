@@ -16,7 +16,7 @@ from bot import (
     git_commit_and_push, is_entry_window, is_stock_entry_window,
     stock_entry_block_reason,
     apply_core_fill, core_code_conflicts, core_dashboard_info,
-    rotation_reentry_override_allows,
+    rotation_reentry_override_allows, exit_override_reason,
     dashboard_holding_count_label, dashboard_long_term_rows,
     core_desired_shares, core_rebalance_due, core_shares,
     is_core_rebalance_window, plan_core_rebalance,
@@ -1399,6 +1399,15 @@ class SafetyTests(unittest.TestCase):
         rebought = sold + [{"timestamp": f"{today} 11:00:00", "type": "BUY",
                             "strategy": ETF_ROTATION_STRATEGY}]
         self.assertFalse(allows(override, rebought, today, "114800", 1400))
+
+
+    def test_exit_override_triggers_only_at_or_above_price(self):
+        overrides = {"003530": {"min_price": 3460}}
+        self.assertIsNone(exit_override_reason(overrides, "003530", 3455))
+        self.assertIn("이익 청산", exit_override_reason(overrides, "003530", 3460))
+        self.assertIsNone(exit_override_reason(overrides, "214150", 99999))
+        self.assertIsNone(exit_override_reason({}, "003530", 3460))
+        self.assertIsNone(exit_override_reason(overrides, "003530", None))
 
 
 if __name__ == "__main__":

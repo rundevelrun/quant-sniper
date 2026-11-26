@@ -22,3 +22,4 @@ backtest/.cache/
 core_state.json
 parking_state.json
 reentry_override.json
+exit_overrides.json
