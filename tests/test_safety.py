@@ -1360,7 +1360,7 @@ class SafetyTests(unittest.TestCase):
                  "last_rebalance_month": "2026-12"}
         info = core_dashboard_info(state, {"319640": 21000}, 1_000_000)
         gold = next(item for item in info["assets"] if "골드" in item["name"])
-        self.assertEqual(set(gold), {"name", "code", "held", "target_pct", "weight_pct", "return_pct"})
+        self.assertEqual(set(gold), {"name", "code", "held", "days_held", "target_pct", "weight_pct", "return_pct"})
         self.assertEqual(gold["target_pct"], 7.5)
         self.assertEqual(gold["weight_pct"], 6.3)
         self.assertEqual(gold["return_pct"], 5.0)
@@ -1377,6 +1377,7 @@ class SafetyTests(unittest.TestCase):
         rows = dashboard_long_term_rows(context)
         self.assertEqual([row["strategy"] for row in rows], ["코어 자산배분", "대기자금"])
         self.assertIn("골드", rows[0]["name"])
+        self.assertEqual(rows[0]["days_held"], 0)
         self.assertEqual(dashboard_holding_count_label({"A": {}}, context),
                          "매매 1 · 코어 1 · 대기 1")
         self.assertEqual(dashboard_holding_count_label({}, {}), "매매 0")

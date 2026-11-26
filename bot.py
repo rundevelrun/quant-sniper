@@ -278,6 +278,7 @@ def dashboard_long_term_rows(context):
                 "strategy": "코어 자산배분",
                 "return_pct": item.get("return_pct"),
                 "asset_key": f"core-{item.get('code', 'unknown')}",
+                "days_held": item.get("days_held"),
                 "exit_plan": "월 1회 리밸런싱(목표 비중 초과분만 매도)",
             })
     parking = context.get("parking") or {}
@@ -467,7 +468,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             f'<td>{html.escape(str(row["name"]))}</td>'
             f'<td>{html.escape(row["strategy"])}</td>'
             f'{dashboard_return_cell(row["return_pct"], row["asset_key"], context)}'
-            '<td align="right">-</td>'
+            f'<td align="right">{f"{int(row["days_held"])}일" if row.get("days_held") else "-"}</td>'
             '<td>없음(장기 보유)</td>'
             f'<td>{html.escape(row["exit_plan"])}</td>'
             '</tr>'
@@ -1418,6 +1419,7 @@ def core_dashboard_info(core_state, prices, total_assets):
             "name": name,
             "code": code,
             "held": shares > 0,
+            "days_held": int(item.get("days_held", 0) or 0) if shares > 0 else None,
             "target_pct": round(CORE_ALLOCATION_PCT * weight * 100, 1),
             "weight_pct": (
                 round(shares * price / total_assets * 100, 1)
@@ -2266,6 +2268,14 @@ def run_trading_loop():
             trades = load_json(TRADES_FILE, [])
             parking = load_json(PARKING_STATE_FILE, {})
             core_state = load_json(CORE_STATE_FILE, {})
+            # 코어 보유일도 매매 포지션처럼 장이 열린 거래일 단위로 센다.
+            core_days_changed = False
+            for core_item in core_holdings(core_state).values():
+                if core_item.get("last_held_date") != today_str:
+                    trading_days_held(core_item, today_str)
+                    core_days_changed = True
+            if core_days_changed:
+                save_json(CORE_STATE_FILE, core_state)
 
             # 실계좌가 상태의 원본이다. 조회 실패는 해당 루프의 신규 주문만 차단한다.
             # 다음 조회가 정상이면 영구 안전잠금과 구분해 즉시 거래를 재개한다.
