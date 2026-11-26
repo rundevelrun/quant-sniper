@@ -2,7 +2,7 @@
 
 <p align="center"><img src="assets/banner.svg" alt="Quant Sniper: 가장 큰 리스크는 나의 손 · 코어 50%, 추세전환 30%, 대기자금 10%, 현금 10%" width="100%"></p>
 
-<p align="center"><br><b>
+<p align="center"><b>
 <a href="https://github.com/rundevelrun/quant-sniper/tree/dashboard">Dashboard</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#한눈에-보기">한눈에 보기</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#백테스트-근거-2017-01--2026-11">백테스트</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#운영-시간표">운영 시간표</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#대시보드와-모니터링">설치</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="LICENSE">License</a>
 </b></p>
 
