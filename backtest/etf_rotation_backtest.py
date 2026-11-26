@@ -35,7 +35,6 @@ ONE_WAY = BROKER_COMMISSION_PCT + ETF_SLIPPAGE_ESTIMATE_PCT
 
 
 def load_prices(codes, start, cache_dir):
-    import FinanceDataReader as fdr
     os.makedirs(cache_dir, exist_ok=True)
     data = {}
     for code in codes:
@@ -43,6 +42,7 @@ def load_prices(codes, start, cache_dir):
         if os.path.exists(path):
             df = pd.read_csv(path, index_col=0, parse_dates=True)
         else:
+            import FinanceDataReader as fdr  # 캐시가 없을 때만 필요
             df = fdr.DataReader(code, start)
             df.to_csv(path)
         df = df[df["Close"] > 0]
