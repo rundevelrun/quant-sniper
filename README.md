@@ -3,10 +3,10 @@
 <p align="center"><img src="assets/banner.svg" alt="Quant Sniper: 가장 큰 리스크는 나의 손 · 코어 50%, 추세전환 30%, 대기자금 10%, 현금 10%" width="100%"></p>
 
 <p align="center"><br><b>
-<a href="https://github.com/rundevelrun/quant-sniper/tree/dashboard">Dashboard</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#한눈에-보기">한눈에 보기</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#백테스트-근거-2017-01--2026-11">백테스트</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#운영-시간표">운영 시간표</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#대시보드와-모니터링">설치</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="LICENSE">License</a>
+<a href="https://github.com/rundevelrun/quant-sniper/blob/dashboard/README.md">Dashboard</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#한눈에-보기">한눈에 보기</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#백테스트-근거-2017-01--2026-11">백테스트</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#운영-시간표">운영 시간표</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#대시보드와-모니터링">설치</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="LICENSE">License</a>
 </b></p>
 
-<p align="center"><a href="https://github.com/rundevelrun/quant-sniper/tree/dashboard"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frundevelrun%2Fquant-sniper%2Fdashboard%2Fbadge.json&style=flat-square" alt="bot status"></a>&nbsp;&nbsp;<a href="https://github.com/rundevelrun/quant-sniper/tree/dashboard"><img src="https://img.shields.io/github/last-commit/rundevelrun/quant-sniper/dashboard?style=flat-square&label=heartbeat&color=64748b" alt="heartbeat"></a><br><br></p>
+<p align="center"><a href="https://github.com/rundevelrun/quant-sniper/blob/dashboard/README.md"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frundevelrun%2Fquant-sniper%2Fdashboard%2Fbadge.json&style=flat-square" alt="bot status"></a>&nbsp;&nbsp;<a href="https://github.com/rundevelrun/quant-sniper/blob/dashboard/README.md"><img src="https://img.shields.io/github/last-commit/rundevelrun/quant-sniper/dashboard?style=flat-square&label=heartbeat&color=64748b" alt="heartbeat"></a><br><br></p>
 
 > **내가 매수 버튼을 누르는 게 가장 큰 리스크라서 만든 프로젝트.**
 
@@ -14,7 +14,7 @@
 
 모의투자 경로는 없습니다. `LIVE_TRADING_ENABLED=true`와 실전 인증정보가 있어야만 실행됩니다.
 
-[운영 대시보드 보기](https://github.com/rundevelrun/quant-sniper/tree/dashboard)
+[운영 대시보드 보기](https://github.com/rundevelrun/quant-sniper/blob/dashboard/README.md)
 
 ## 한눈에 보기
 
@@ -157,7 +157,7 @@ watchdog은 평일 09:00–15:32에 1분마다 확인하고 heartbeat가 3분 �
 
 ## 대시보드와 모니터링
 
-공개 [`dashboard` 브랜치](https://github.com/rundevelrun/quant-sniper/tree/dashboard)에 현재 상태, 보유 포지션(수익률·비중·청산 계획), 계좌 안전장치, 전체 성과, 청산 전체 기록, 감시 종목을 표시합니다. 금액·수량은 공개하지 않고 퍼센트만 보여 줍니다.
+공개 [`dashboard` 브랜치](https://github.com/rundevelrun/quant-sniper/blob/dashboard/README.md)에 현재 상태, 보유 포지션(수익률·비중·청산 계획), 계좌 안전장치, 전체 성과, 청산 전체 기록, 감시 종목을 표시합니다. 금액·수량은 공개하지 않고 퍼센트만 보여 줍니다.
 
 필자는 Claude Code를 운영 보조로 씁니다. Claude는 직접 주문하지 않고, 봇 규칙과 운영자가 승인한 변경을 통해서만 매매에 관여합니다. 저장소에 포함된 필수 기능은 아닙니다.
 
