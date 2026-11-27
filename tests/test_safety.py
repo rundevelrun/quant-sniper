@@ -1459,8 +1459,10 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(resolve_external_flow(Api(flows), {}, "2026-12-02", 0, 400000), 0)
 
     def test_inverse_rotation_alloc_is_capped(self):
-        self.assertEqual(rotation_alloc_pct("114800"), 0.15)
+        self.assertEqual(rotation_alloc_pct("114800"), 0.40)
         self.assertEqual(rotation_alloc_pct("069500"), 0.40)
+        with mock.patch("bot.ETF_INVERSE_MAX_ALLOC_PCT", 0.15):
+            self.assertEqual(rotation_alloc_pct("114800"), 0.15)
 
 
 
