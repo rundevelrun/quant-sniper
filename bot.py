@@ -1497,7 +1497,46 @@ def mark_flow_rebalance(core_state, external_flow, current_assets):
     if core_state.get("flow_rebalance_pending"):
         return False
     core_state["flow_rebalance_pending"] = True
+    # 추세전환 보유분도 같은 창에서 목표 비중으로 맞춘다(백테스트는 비율 기준이라 입출금과 무관하게 비중 유지).
+    core_state["rotation_resize_pending"] = True
     return True
+
+def plan_rotation_resize(pos, price, total_assets, alloc_pct, size_multiplier=1.0,
+                         min_gap_ratio=0.10):
+    """큰 입출금 뒤 추세전환 보유분을 목표 비중으로 맞출 수량. (side, qty) 또는 None.
+
+    목표 금액과의 차이가 목표의 min_gap_ratio 미만이거나 1주 미만이면 매매하지 않는다.
+    계좌 낙폭 구간(size_multiplier<1)에서는 늘리지 않고 줄이기만 한다.
+    """
+    price = float(price or 0)
+    if not pos or price <= 0 or total_assets <= 0:
+        return None
+    shares = int(pos.get("shares", 0) or 0)
+    target_value = float(total_assets) * float(alloc_pct) * min(1.0, float(size_multiplier))
+    gap = target_value - shares * price
+    if abs(gap) < target_value * min_gap_ratio:
+        return None
+    qty = int(round(gap / price))
+    if qty > 0:
+        if size_multiplier < 1:
+            return None
+        return "buy", qty
+    if qty < 0:
+        return "sell", min(-qty, shares - 1)  # 전량 매도는 추세 판단(청산 규칙)에 맡긴다
+    return None
+
+def apply_rotation_resize_fill(pos, side, qty, price):
+    """추가 매수는 평균 단가를 다시 계산(손절가도 평균 단가 기준), 축소는 수량만 줄인다."""
+    shares = int(pos.get("shares", 0) or 0)
+    if side == "buy":
+        new_shares = shares + int(qty)
+        pos["buy_price"] = round(
+            (shares * float(pos["buy_price"]) + int(qty) * float(price)) / new_shares, 4
+        )
+        pos["shares"] = new_shares
+    else:
+        pos["shares"] = max(0, shares - int(qty))
+    return pos
 
 def core_desired_shares(target_value, price, current_shares, min_trade_value):
     """목표 금액에 맞는 정수 수량. 차이가 작으면 현재 수량을 유지해 잦은 매매를 막는다."""
@@ -3600,6 +3639,122 @@ def run_trading_loop():
                         core_state.pop("flow_rebalance_pending", None)
                         save_json(CORE_STATE_FILE, core_state)
                         print(f"[{now_str}] [CORE] 이번 달 코어 자산배분 리밸런싱 완료")
+
+            # 큰 입출금 뒤 추세전환 보유분을 목표 비중으로 맞춘다(코어 리밸런싱 창).
+            if (
+                core_state.get("rotation_resize_pending")
+                and is_core_rebalance_window(now)
+                and account.get("ok")
+                and not (trading_halted or account_lookup_failed)
+            ):
+                resize_name, resize_pos = next(
+                    ((n, p) for n, p in positions.items()
+                     if p.get("strategy") == ETF_ROTATION_STRATEGY),
+                    (None, None),
+                )
+                resize_quote = (
+                    realtime.quote(resize_pos["code"]) if resize_pos else None
+                )
+                resize_done = True
+                if resize_pos and rotation_target_code == resize_pos["code"]:
+                    if not resize_quote:
+                        resize_done = False  # 시세가 오면 다음 루프에 다시 시도
+                    else:
+                        resize_price = float(resize_quote["price"])
+                        resize_total = float(account.get("total_assets") or 0)
+                        plan = plan_rotation_resize(
+                            resize_pos, resize_price, resize_total,
+                            rotation_alloc_pct(resize_pos["code"]), entry_size_multiplier,
+                        )
+                        if plan:
+                            side, qty = plan
+                            if side == "buy":
+                                resize_cash = api.get_cash_balance(force_refresh=True)
+                                spendable = entry_cash_after_reserve(
+                                    resize_total,
+                                    resize_cash + parking_liquidation_value(parking, parking_price),
+                                )
+                                qty = min(qty, int(spendable // resize_price))
+                                shortfall = qty * resize_price - entry_cash_after_reserve(
+                                    resize_total, resize_cash
+                                )
+                                sell_qty = parking_sell_shares_needed(
+                                    shortfall, parking_price, parking_shares(parking)
+                                ) if qty > 0 else 0
+                                if sell_qty > 0:
+                                    sold_qty, sold_price, sell_error = execute_parking_order(
+                                        api, "sell", sell_qty, parking_price
+                                    )
+                                    if sold_qty > 0:
+                                        parking = apply_parking_fill(
+                                            parking, "sell", sold_qty, sold_price, today_str
+                                        )
+                                        save_json(PARKING_STATE_FILE, parking)
+                                    if sell_error:
+                                        qty = 0
+                                        resize_done = False
+                                    else:
+                                        resize_cash = api.get_cash_balance(force_refresh=True)
+                                        qty = min(qty, int(entry_cash_after_reserve(
+                                            resize_total, resize_cash
+                                        ) // resize_price))
+                            if qty > 0:
+                                filled, fill_price, order_error = execute_etf_order(
+                                    api, side, resize_pos["code"], resize_name, qty,
+                                    resize_price,
+                                    "큰 입출금: 추세전환 비중 조정",
+                                )
+                                if filled > 0:
+                                    before_price = float(resize_pos["buy_price"])
+                                    apply_rotation_resize_fill(
+                                        resize_pos, side, filled, fill_price
+                                    )
+                                    if side == "sell":
+                                        cost_krw = filled * fill_price * float(
+                                            resize_pos.get("roundtrip_cost_pct", TOTAL_ROUNDTRIP_COST_PCT)
+                                        )
+                                        net_krw = filled * (fill_price - before_price) - cost_krw
+                                        trades.append({
+                                            "timestamp": now_str, "type": "SELL",
+                                            "name": resize_name, "code": resize_pos["code"],
+                                            "shares": filled, "entry_price": before_price,
+                                            "exit_price": fill_price,
+                                            "signal_price": resize_price,
+                                            "price_source": "broker_execution",
+                                            "gross_return_pct": round((fill_price / before_price - 1) * 100, 2),
+                                            "net_return_pct": round(net_krw / (filled * before_price) * 100, 2),
+                                            "cost_fee_krw": round(cost_krw, 0),
+                                            "net_profit_krw": round(net_krw, 0),
+                                            "reason": "큰 출금: 추세전환 비중 축소",
+                                            "strategy": resize_pos.get("strategy"),
+                                            "entry_date": resize_pos.get("entry_date"),
+                                            "days_held": int(resize_pos.get("days_held", 0)),
+                                        })
+                                        save_json(TRADES_FILE, trades)
+                                    save_json(POSITIONS_FILE, positions)
+                                    record_dashboard_event(
+                                        "BUY" if side == "buy" else "SELL",
+                                        resize_name, resize_pos["code"],
+                                        "큰 입금: 추세전환 비중 확대" if side == "buy"
+                                        else "큰 출금: 추세전환 비중 축소",
+                                        shares=filled, price=round(fill_price, 2),
+                                    )
+                                    dashboard_dirty = True
+                                    print(
+                                        f"[{now_str}] [ROTATION] 비중 조정 {side} {resize_name} "
+                                        f"{filled}주 @{fill_price:,.0f} → 보유 {resize_pos['shares']}주",
+                                        flush=True,
+                                    )
+                                if order_error:
+                                    trading_halted = True
+                                    reason = f"추세전환 비중 조정 {resize_name} 체결 미확인: {order_error}"
+                                    risk_reasons.append(reason)
+                                    record_dashboard_event("RISK", reason=reason)
+                                    dashboard_critical = True
+                                    print(f"[{now_str}] [CRITICAL] {reason}; 신규주문 중단", flush=True)
+                if resize_done:
+                    core_state.pop("rotation_resize_pending", None)
+                    save_json(CORE_STATE_FILE, core_state)
 
             # 장 막판(진입 종료 후)에 남는 현금을 하루 한 번 대기자금 ETF에 넣는다.
             if (

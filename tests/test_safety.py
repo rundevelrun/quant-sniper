@@ -18,7 +18,7 @@ from bot import (
     stock_entry_block_reason,
     apply_core_fill, core_code_conflicts, core_dashboard_info,
     remember_core_last_prices, mark_flow_rebalance,
-    restore_dashboard_context, resolve_external_flow, rotation_alloc_pct, holdings_changed, position_weight_pcts, dashboard_weight_cell,
+    restore_dashboard_context, resolve_external_flow, rotation_alloc_pct, plan_rotation_resize, apply_rotation_resize_fill, mark_flow_rebalance, holdings_changed, position_weight_pcts, dashboard_weight_cell,
     dashboard_holding_count_label, dashboard_long_term_rows,
     core_desired_shares, core_rebalance_due, core_shares,
     is_core_rebalance_window, plan_core_rebalance,
@@ -1556,6 +1556,34 @@ class SafetyTests(unittest.TestCase):
             md = bot.render_dashboard("running", "x", {}, RT(), [], context={})
         self.assertNotIn("## 감시 종목 전체", md)
         self.assertNotIn("| RSI 반등", md)
+
+
+    def test_rotation_resize_after_large_deposit(self):
+        pos = {"shares": 69, "buy_price": 1404.0}
+        # 3천만 원 입금 뒤 총자산 3,039만 원: 40% 목표까지 추가 매수
+        side, qty = plan_rotation_resize(pos, 1356, 30_390_000, 0.40)
+        self.assertEqual(side, "buy")
+        self.assertEqual(qty, round((30_390_000 * 0.40 - 69 * 1356) / 1356))
+        # 목표 대비 10% 미만 차이는 매매하지 않음(작은 입금·평소 물타기 방지)
+        self.assertIsNone(plan_rotation_resize({"shares": 100}, 1000, 260_000, 0.40))
+        # 낙폭 구간에서는 늘리지 않음
+        self.assertIsNone(plan_rotation_resize(pos, 1356, 30_390_000, 0.40, 0.5))
+        # 큰 출금이면 줄이되 전량 매도는 하지 않음
+        side, qty = plan_rotation_resize({"shares": 100}, 1000, 100_000, 0.40)
+        self.assertEqual((side, qty), ("sell", 60))
+        side, qty = plan_rotation_resize({"shares": 2}, 1000, 1_000, 0.40)
+        self.assertEqual((side, qty), ("sell", 1))
+        avg = apply_rotation_resize_fill({"shares": 69, "buy_price": 1404.0}, "buy", 31, 1300)
+        self.assertEqual(avg["shares"], 100)
+        self.assertAlmostEqual(avg["buy_price"], (69 * 1404 + 31 * 1300) / 100, places=3)
+
+    def test_large_flow_marks_rotation_resize(self):
+        state = {}
+        self.assertTrue(mark_flow_rebalance(state, 30_000_000, 30_390_000))
+        self.assertTrue(state.get("rotation_resize_pending"))
+        small = {}
+        self.assertFalse(mark_flow_rebalance(small, 10_000, 400_000))
+        self.assertNotIn("rotation_resize_pending", small)
 
 
 if __name__ == "__main__":
