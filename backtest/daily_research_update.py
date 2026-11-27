@@ -39,6 +39,11 @@ def main():
     if today not in recent:
         recent.append(today)
     for name, (pcode, mcode, total) in cf.MARKETS.items():
+        # 최근 날짜는 장중에 받은 중간값일 수 있으므로 지우고 다시 받는다.
+        ipath = os.path.join(C, "flows", f"investor_{name}.csv")
+        if os.path.exists(ipath):
+            inv = pd.read_csv(ipath, dtype={"date": str})
+            inv[~inv["date"].isin(recent)].to_csv(ipath, index=False)
         cf.investor(client, name, mcode, total, recent)
         rows = client.paged("/api/dostk/mrkcond", "ka90010",
                             {"date": today, "amt_qty_tp": "1", "mrkt_tp": pcode, "min_tic_tp": "1", "stex_tp": "1"},
