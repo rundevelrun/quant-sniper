@@ -579,12 +579,13 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             f"| 섹터 ETF 추세 | {sector_status} "
             f"| {sector_label} | 전일 확정 1/3개월 모멘텀·시장 상대강도·최대 15% |"
         )
-    lines += [
-        f"| RSI 반등 | {'비활성화' if not STOCK_STRATEGIES_ENABLED else '신호 확인 중' if int(context.get('confirming_signal_count', 0)) else '대기'} "
-        f"| 감시 유니버스 | {market_label} · {STOCK_ENTRY_START_TIME}~{STOCK_ENTRY_END_TIME} 진입 |",
-        f"| VBO 돌파 | {'비활성화' if not STOCK_STRATEGIES_ENABLED else '확정 신호 있음' if int(context.get('confirmed_signal_count', 0)) else '대기'} "
-        f"| 감시 유니버스 | 가격 돌파와 거래량 확인 · 우호장만 · {STOCK_ENTRY_START_TIME}~{STOCK_ENTRY_END_TIME} 진입 |",
-    ]
+    if STOCK_STRATEGIES_ENABLED:  # 꺼져 있으면 화면에서 뺀다
+        lines += [
+            f"| RSI 반등 | {'신호 확인 중' if int(context.get('confirming_signal_count', 0)) else '대기'} "
+            f"| 감시 유니버스 | {market_label} · {STOCK_ENTRY_START_TIME}~{STOCK_ENTRY_END_TIME} 진입 |",
+            f"| VBO 돌파 | {'확정 신호 있음' if int(context.get('confirmed_signal_count', 0)) else '대기'} "
+            f"| 감시 유니버스 | 가격 돌파와 거래량 확인 · 우호장만 · {STOCK_ENTRY_START_TIME}~{STOCK_ENTRY_END_TIME} 진입 |",
+        ]
     if INTRADAY_SURGE_ENABLED:
         lines.append(
             f"| 당일 거래량 급증 | {'후보 감시' if int(context.get('intraday_surge_count', 0)) else '대기'} "
@@ -596,44 +597,45 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             f"| KODEX 200 | {MIM_EXIT_TIME} 당일 청산 |"
         )
 
-    lines += [
-        "", "## 감시 종목 전체", "",
-        f"> 전체 {int(context.get('universe_count', 0))}개 · 신호 우선·RSI 오름차순", "",
-        "| 종목 | 시장 | 직전 RSI | 현재 RSI | 신호 | 현재 판단 |",
-        "|---|---|---:|---:|---|---|",
-    ]
-    universe_symbols = context.get("tradeability") or context.get("universe_symbols", [])
-    signal_statuses = {
-        item.get("name"): item for item in context.get("signal_statuses", [])
-    }
-    signal_diagnostics = {
-        item.get("name"): item for item in context.get("signal_diagnostics", [])
-    }
-    if universe_symbols:
-        ranked = sorted(universe_symbols, key=lambda item: (
-            0 if signal_statuses.get(item.get("name"), {}).get("active") else 1,
-            float(signal_diagnostics.get(item.get("name"), {}).get("previous_rsi") or 999),
-        ))
-        for item in ranked:
-            signal = signal_statuses.get(item.get("name"), {})
-            diagnostic = signal_diagnostics.get(item.get("name"), {})
-            previous_rsi = diagnostic.get("previous_rsi")
-            current_rsi = diagnostic.get("rsi")
-            blockers = diagnostic.get("rsi_blocker") or diagnostic.get("vbo_blocker") or "계산 대기"
-            signal_text = (
-                f"🟢 {_md(signal.get('strategy'))}"
-                f"{' · 15% 제한' if signal.get('strategy') in {'비우호장 강한 VBO (15%)', INTRADAY_SURGE_STRATEGY} else ' · 비우호장 50%' if float(signal.get('size_multiplier', 1.0)) < 1 else ''} "
-                f"({int(signal.get('count', 0))}/3)"
-                if signal.get("active") else "🔴 신호 없음"
-            )
-            lines.append(
-                f"| {_md(item.get('name'))} | {_md(item.get('market', '미분류'))} "
-                f"| {f'{float(previous_rsi):.1f}' if previous_rsi is not None else '-'} "
-                f"| {f'{float(current_rsi):.1f}' if current_rsi is not None else '-'} "
-                f"| {signal_text} | {_md(blockers)} |"
-            )
-    else:
-        lines.append("| 감시 종목 없음 | - | - | - | - | - |")
+    if STOCK_STRATEGIES_ENABLED:
+        lines += [
+            "", "## 감시 종목 전체", "",
+            f"> 전체 {int(context.get('universe_count', 0))}개 · 신호 우선·RSI 오름차순", "",
+            "| 종목 | 시장 | 직전 RSI | 현재 RSI | 신호 | 현재 판단 |",
+            "|---|---|---:|---:|---|---|",
+        ]
+        universe_symbols = context.get("tradeability") or context.get("universe_symbols", [])
+        signal_statuses = {
+            item.get("name"): item for item in context.get("signal_statuses", [])
+        }
+        signal_diagnostics = {
+            item.get("name"): item for item in context.get("signal_diagnostics", [])
+        }
+        if universe_symbols:
+            ranked = sorted(universe_symbols, key=lambda item: (
+                0 if signal_statuses.get(item.get("name"), {}).get("active") else 1,
+                float(signal_diagnostics.get(item.get("name"), {}).get("previous_rsi") or 999),
+            ))
+            for item in ranked:
+                signal = signal_statuses.get(item.get("name"), {})
+                diagnostic = signal_diagnostics.get(item.get("name"), {})
+                previous_rsi = diagnostic.get("previous_rsi")
+                current_rsi = diagnostic.get("rsi")
+                blockers = diagnostic.get("rsi_blocker") or diagnostic.get("vbo_blocker") or "계산 대기"
+                signal_text = (
+                    f"🟢 {_md(signal.get('strategy'))}"
+                    f"{' · 15% 제한' if signal.get('strategy') in {'비우호장 강한 VBO (15%)', INTRADAY_SURGE_STRATEGY} else ' · 비우호장 50%' if float(signal.get('size_multiplier', 1.0)) < 1 else ''} "
+                    f"({int(signal.get('count', 0))}/3)"
+                    if signal.get("active") else "🔴 신호 없음"
+                )
+                lines.append(
+                    f"| {_md(item.get('name'))} | {_md(item.get('market', '미분류'))} "
+                    f"| {f'{float(previous_rsi):.1f}' if previous_rsi is not None else '-'} "
+                    f"| {f'{float(current_rsi):.1f}' if current_rsi is not None else '-'} "
+                    f"| {signal_text} | {_md(blockers)} |"
+                )
+        else:
+            lines.append("| 감시 종목 없음 | - | - | - | - | - |")
     drawdown = context.get("account_drawdown_pct")
     daily_return = context.get("daily_return_pct")
     cumulative_return = context.get("cumulative_return_pct")
@@ -2191,7 +2193,7 @@ def run_trading_loop():
     except Exception as exc:
         print(f"[CASHFLOW] 입출금 내역 점검 오류: {exc}", flush=True)
     last_screened_date = None
-    active_universe = DEFAULT_UNIVERSE
+    active_universe = DEFAULT_UNIVERSE if STOCK_STRATEGIES_ENABLED else {}
     universe_metadata = {}
     risk_date = None
     opening_assets = None
@@ -2298,7 +2300,8 @@ def run_trading_loop():
 
             # 장전에는 키움 전일 확정 순위를 미리 캐시한다.
             screening_window = now.weekday() < 5 and now.hour == 8 and now.minute >= 30
-            if DYNAMIC_SCREENING and last_screened_date != today_str and screening_window:
+            if (DYNAMIC_SCREENING and STOCK_STRATEGIES_ENABLED
+                    and last_screened_date != today_str and screening_window):
                 print(f"[{now_str}] 🔍 전일(D-1) 확정 거래대금 TOP 우량주 동적 스크리닝 가동...")
                 screening_account = api.get_account_snapshot()
                 screening_parking = load_json(PARKING_STATE_FILE, {})
@@ -2359,6 +2362,7 @@ def run_trading_loop():
             # 장중 최초 기동 시에도 키움의 '전일' 확정 순위로만 오늘 유니버스를 복구한다.
             intraday_bootstrap = (
                 DYNAMIC_SCREENING
+                and STOCK_STRATEGIES_ENABLED
                 and last_screened_date != today_str
                 and CURRENT_MARKET_OPEN
                 and is_entry_window(now)

@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 import datetime
 from unittest.mock import patch
 
@@ -346,6 +347,7 @@ class SafetyTests(unittest.TestCase):
         ))
         self.assertEqual(positions["보유주"]["last_price"], 10100)
 
+    @mock.patch('bot.STOCK_STRATEGIES_ENABLED', True)
     def test_dashboard_lists_all_monitored_symbols_without_sensitive_prices(self):
         class Feed:
             def quote(self, code, *_):
@@ -376,6 +378,7 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("🔴 신호 없음", markdown)
         self.assertIn("</table>\n\n## 감시 종목 전체", markdown)
 
+    @mock.patch('bot.STOCK_STRATEGIES_ENABLED', True)
     def test_dashboard_does_not_limit_monitored_symbols_to_ten(self):
         class Feed:
             def quote(self, code, *_):
@@ -1535,6 +1538,22 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(resolve_external_flow(Api(), {}, "2026-12-01", 0, 400000, traded=True), 30000)
         # 매매도 없고 추정도 0이면 조회하지 않는다.
         self.assertEqual(resolve_external_flow(Api(), {}, "2026-12-01", 0, 400000), 0)
+
+
+    def test_dashboard_hides_stock_sections_when_disabled(self):
+        import bot
+
+        class RT:
+            def quote(self, code, *_):
+                return None
+
+            def is_healthy(self):
+                return True, ""
+
+        with mock.patch("bot.STOCK_STRATEGIES_ENABLED", False):
+            md = bot.render_dashboard("running", "x", {}, RT(), [], context={})
+        self.assertNotIn("## 감시 종목 전체", md)
+        self.assertNotIn("| RSI 반등", md)
 
 
 if __name__ == "__main__":
