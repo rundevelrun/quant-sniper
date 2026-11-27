@@ -31,6 +31,39 @@ def merge_csv(path, new, key):
     return len(new)
 
 
+def refresh_symbols(today):
+    """매월 첫 실행 때 1분봉 수집 대상을 넓힌다(추가만, 삭제 없음)."""
+    path = os.path.join(C, "minutes", "symbols.txt")
+    stamp = os.path.join(C, "minutes", "symbols.month")
+    month = today[:6]
+    if os.path.exists(stamp) and open(stamp).read().strip() == month:
+        return
+    current = [x.strip() for x in open(path)] if os.path.exists(path) else []
+    add = []
+    try:
+        sys.path.insert(0, ROOT)
+        from config import CORE_TARGETS, ETF_ROTATION_ASSETS, PARKING_ETF_CODE
+        add += list(CORE_TARGETS) + list(ETF_ROTATION_ASSETS) + [PARKING_ETF_CODE]
+    except Exception as exc:
+        print("설정 읽기 실패", exc, flush=True)
+    listing = os.path.join(C, "stocks_all", "listing.csv")
+    if os.path.exists(listing):
+        lst = pd.read_csv(listing, dtype=str)
+        add += lst[lst["market"] == "KOSPI"]["code"].tolist()[:70] + lst[lst["market"] == "KOSDAQ"]["code"].tolist()[:30]
+    try:
+        req = urllib.request.Request("https://finance.naver.com/api/sise/etfItemList.nhn",
+                                     headers={"User-Agent": "Mozilla/5.0"})
+        etfs = json.loads(urllib.request.urlopen(req, timeout=30).read().decode("euc-kr", "ignore"))
+        items = sorted(etfs["result"]["etfItemList"], key=lambda x: -x["marketSum"])
+        add += [x["itemcode"] for x in items[:50]]
+    except Exception as exc:
+        print("ETF 목록 실패", exc, flush=True)
+    merged = list(dict.fromkeys([x for x in current if x] + add))
+    open(path, "w").write("\n".join(merged) + "\n")
+    open(stamp, "w").write(month)
+    print("분봉 대상", len(current), "->", len(merged), flush=True)
+
+
 def main():
     client = ResearchClient()
     today = pd.Timestamp.today().strftime("%Y%m%d")
@@ -53,11 +86,14 @@ def main():
                              "all_net": cf.num(r.get("all_netprps"))} for r in rows])
         n = merge_csv(os.path.join(C, "flows", f"program_{name}.csv"), new, "date")
         print(name, "program rows", n, flush=True)
+    refresh_symbols(today)
     for code in cm.symbols():
         try:
             rows = client.paged("/api/dostk/chart", "ka10080",
                                 {"stk_cd": code, "tic_scope": "1", "upd_stkpc_tp": "1", "base_dt": today},
-                                "stk_min_pole_chart_qry", max_pages=8)
+                                "stk_min_pole_chart_qry",
+                                # 새로 추가된 종목은 키움이 보관한 1년 치를 처음에 한 번 받는다.
+                                max_pages=8 if os.path.exists(os.path.join(C, "minutes", f"{code}.csv")) else 400)
         except Exception as exc:
             print(code, "분봉 실패", exc, flush=True)
             continue
