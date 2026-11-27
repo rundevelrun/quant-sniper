@@ -32,7 +32,8 @@ def prepare(start="2017-01-02"):
 
 
 def simulate(dates, arr, start_i, ma=60, band=0.01, slope=5, short=60, long=120,
-             margin=0.02, stop=0.05, alloc=0.5, assets=None):
+             margin=0.02, stop=0.05, alloc=0.5, assets=None, size_fn=None, cash_rate=0.0):
+    """size_fn(code, i)가 주어지면 종목별 투입 비율(0~1)을 그 값으로 쓴다. cash_rate: 미투입 현금 연이율."""
     assets = assets or list(arr)
     need = max(ma + slope, long + 1)
     closes = {c: arr[c]["Close"] for c in assets}
@@ -45,6 +46,7 @@ def simulate(dates, arr, start_i, ma=60, band=0.01, slope=5, short=60, long=120,
     curve = np.ones(len(dates))
     trades = []
     for i in range(start_i, len(dates)):
+        cash *= 1 + cash_rate / 252
         scores, elig = {}, {}
         for c in assets:
             vi = valid_idx[c]
@@ -88,7 +90,8 @@ def simulate(dates, arr, start_i, ma=60, band=0.01, slope=5, short=60, long=120,
             vi = valid_idx[target]
             prev_close = closes[target][vi[np.searchsorted(vi, i) - 1]]
             if not np.isnan(o) and o / prev_close - 1 >= -0.03:
-                invest = cash * alloc if alloc < 1 else cash
+                w = size_fn(target, i) if size_fn else alloc
+                invest = cash * w if w < 1 else cash
                 units = invest / (o * (1 + ONE_WAY))
                 cost_basis = invest
                 cash -= invest
