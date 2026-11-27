@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 import json
 import urllib.request
@@ -97,6 +98,8 @@ class KiwoomRestAPI:
         self.base_url = "https://api.kiwoom.com"
         self.token = None
         self.token_expiry = 0
+        # 웹소켓 스레드와 메인 루프가 동시에 발급하면 먼저 받은 토큰이 무효(8005)가 된다.
+        self._token_lock = threading.Lock()
         self.withdrawable = None
         self.withdrawable_d1 = None
         self.last_universe_metadata = {}
@@ -115,8 +118,19 @@ class KiwoomRestAPI:
         if not self.live_trading_enabled:
             raise RuntimeError("실전 주문이 잠겨 있습니다. LIVE_TRADING_ENABLED=true가 필요합니다.")
 
+    def invalidate_token(self, bad_token=None):
+        """8005(토큰 무효)를 받으면 캐시를 버려 다음 호출에서 새로 발급받게 한다."""
+        with self._token_lock:
+            if bad_token is None or self.token == bad_token:
+                self.token = None
+                self.token_expiry = 0
+
     def get_token(self):
-        """OAuth 2.0 접근 토큰 발급 (au10001) 및 캐싱"""
+        """OAuth 2.0 접근 토큰 발급 (au10001) 및 캐싱. 동시에 두 번 발급하지 않도록 잠근다."""
+        with self._token_lock:
+            return self._get_token_locked()
+
+    def _get_token_locked(self):
         if self.token and time.time() < self.token_expiry - 60:
             return self.token
 
@@ -209,9 +223,12 @@ class KiwoomRestAPI:
         )
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
-                return json.loads(response.read().decode("utf-8"))
+                data = json.loads(response.read().decode("utf-8"))
         except Exception as exc:
             return {"return_code": -1, "return_msg": str(exc)}
+        if "8005" in str(data.get("return_msg", "")):
+            self.invalidate_token(token)  # 다음 호출에서 새 토큰 발급
+        return data
 
     def get_previous_day_universe(self, top_n, min_market_cap, max_market_cap,
                                   preferred_max_price=None, rank_pool=100):

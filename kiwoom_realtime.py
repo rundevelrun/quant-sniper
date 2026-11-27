@@ -10,8 +10,9 @@ from websockets import connect
 
 
 class KiwoomRealtimeFeed:
-    def __init__(self, token_provider):
+    def __init__(self, token_provider, token_invalidator=None):
         self.token_provider = token_provider
+        self.token_invalidator = token_invalidator
         self._lock = threading.Lock()
         self._symbols = set()
         self._quotes = {}
@@ -75,7 +76,10 @@ class KiwoomRealtimeFeed:
             await websocket.send(json.dumps({"trnm": "LOGIN", "token": token}))
             login = json.loads(await asyncio.wait_for(websocket.recv(), timeout=10))
             if int(login.get("return_code", -1)) != 0:
-                raise RuntimeError(login.get("return_msg", "websocket login failed"))
+                message = str(login.get("return_msg", "websocket login failed"))
+                if self.token_invalidator and ("8005" in message or "Token" in message):
+                    self.token_invalidator(token)  # 다음 재접속에서 새 토큰으로 로그인
+                raise RuntimeError(message)
             with self._lock:
                 self._connected = True
                 self._last_error = ""

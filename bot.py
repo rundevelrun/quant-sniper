@@ -2213,7 +2213,7 @@ def run_trading_loop():
     update_health_status(status="running", detail="봇 최초 가동 시작")
     
     api = KiwoomRestAPI()
-    realtime = KiwoomRealtimeFeed(api.get_token)
+    realtime = KiwoomRealtimeFeed(api.get_token, api.invalidate_token)
     realtime.start()
     # 입출금 내역 API 응답 형식 점검(조회 전용, 금액·적요만 로컬 로그에 남김).
     try:

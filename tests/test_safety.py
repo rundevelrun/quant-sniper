@@ -1586,5 +1586,33 @@ class SafetyTests(unittest.TestCase):
         self.assertNotIn("rotation_resize_pending", small)
 
 
+    def test_token_issued_once_under_concurrency(self):
+        import threading
+        import kiwoom_api
+        api = kiwoom_api.KiwoomRestAPI.__new__(kiwoom_api.KiwoomRestAPI)
+        api.token, api.token_expiry = None, 0
+        api._token_lock = threading.Lock()
+        calls = []
+
+        def issue():
+            import time as _t
+            calls.append(1)
+            _t.sleep(0.05)
+            api.token, api.token_expiry = f"T{len(calls)}", _t.time() + 86400
+            return api.token
+
+        api._get_token_locked = lambda: api.token if api.token else issue()
+        got = []
+        threads = [threading.Thread(target=lambda: got.append(api.get_token())) for _ in range(4)]
+        [th.start() for th in threads]
+        [th.join() for th in threads]
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(set(got), {"T1"})
+        api.invalidate_token("other")
+        self.assertEqual(api.token, "T1")
+        api.invalidate_token("T1")
+        self.assertIsNone(api.token)
+
+
 if __name__ == "__main__":
     unittest.main()
