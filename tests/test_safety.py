@@ -1460,7 +1460,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_inverse_rotation_alloc_is_capped(self):
         self.assertEqual(rotation_alloc_pct("114800"), 0.15)
-        self.assertEqual(rotation_alloc_pct("069500"), 0.30)
+        self.assertEqual(rotation_alloc_pct("069500"), 0.40)
 
 
 

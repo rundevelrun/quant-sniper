@@ -101,11 +101,11 @@ ETF_ROTATION_BAND_PCT = 0.01
 ETF_ROTATION_SHORT_MOMENTUM_DAYS = 60
 ETF_ROTATION_LONG_MOMENTUM_DAYS = 120
 ETF_ROTATION_SWITCH_MARGIN = 0.02
-ETF_ROTATION_ALLOC_PCT = 0.30  # 코어 자산배분 50%와 함께 운용(조합 백테스트 기준)
+ETF_ROTATION_ALLOC_PCT = 0.40  # 코어 50%와 함께 운용. 30%보다 연수익 +1.8%p, 최대 낙폭 -2.9%p(사용자 수익 우선 선택, 2026-11-27)
 # ETF 추세전환은 국면 전환(60일선·모멘텀)으로 청산한다. 손절은 급락 대비 재해 손절만 둔다.
 ETF_ROTATION_STOP_LOSS_PCT = 0.05
 # 재해 손절 5% × 배정 30% = 계좌 1.5%. 개별주 0.7%와 별도로 ETF 추세전환에만 적용한다.
-ETF_MAX_RISK_PER_TRADE_PCT = 0.015
+ETF_MAX_RISK_PER_TRADE_PCT = 0.02
 # 인버스는 하락장 급반등에 손절선 아래로 갭이 나기 쉬워 신규 진입 비중을 절반으로 제한한다.
 # (2017-2026 실전 ETF·2007-2026 프록시 모두 수익은 비슷하고 급락일 손실은 축소)
 ETF_INVERSE_CODES = {"114800"}
