@@ -1051,14 +1051,23 @@ def account_snapshot_baseline(account):
 
 DISTRIBUTION_KEYWORDS = ("배당", "분배", "이자", "이용료")
 
-def resolve_external_flow(api, risk_state, today_str, estimate, current_assets):
+def holdings_changed(previous_snapshot, account):
+    """직전 스냅샷과 보유 수량이 다르면 True(이번 회차에 매매가 있었음)."""
+    if not previous_snapshot:
+        return False
+    prev = {c: int(p.get("shares", 0)) for c, p in previous_snapshot.get("positions", {}).items()}
+    cur = {c: int(p.get("shares", 0)) for c, p in account.get("positions", {}).items()}
+    return prev != cur
+
+def resolve_external_flow(api, risk_state, today_str, estimate, current_assets, traded=False):
     """잔고 추정 입출금을 증권사 입출금 내역으로 확인해 분배금·이자를 제외한다.
 
     - 내역 조회 실패 시 기존 추정치를 그대로 쓴다(이전 동작).
     - 같은 내역을 두 번 반영하지 않도록 처리한 내역 번호를 날짜별로 기억한다.
     - 새 내역이 없는데 추정치가 계좌의 1%를 넘으면 추정치를 쓴다(반영 지연 대비).
     """
-    if not estimate:
+    # 매매가 있었던 회차는 잔고 추정이 0으로 나오므로 입출금 내역을 직접 확인한다.
+    if not estimate and not traded:
         return 0.0
     flows = api.get_cash_flows(today_str) if hasattr(api, "get_cash_flows") else None
     if flows is None:
@@ -1070,7 +1079,7 @@ def resolve_external_flow(api, risk_state, today_str, estimate, current_assets):
         f["amount"] for f in new
         if not any(word in f["memo"] for word in DISTRIBUTION_KEYWORDS)
     )
-    if not new and abs(estimate) > 0.01 * float(current_assets or 0):
+    if not new and not traded and abs(estimate) > 0.01 * float(current_assets or 0):
         return estimate
     risk_state["seen_cash_flows"] = {
         "date": today_str, "ids": sorted(seen | {f["id"] for f in new}),
@@ -1255,6 +1264,7 @@ def restore_daily_account_metrics(api, risk_state, today_str):
         api, risk_state, today_str,
         estimate_external_cash_flow(risk_state.get("account_baseline"), account),
         current_assets,
+        traded=holdings_changed(risk_state.get("account_baseline"), account),
     )
     if external_flow:
         opening_assets = max(0.0, opening_assets + external_flow)
@@ -2527,6 +2537,7 @@ def run_trading_loop():
                     api, risk_state, today_str,
                     estimate_external_cash_flow(risk_state.get("account_baseline"), account),
                     current_assets,
+                    traded=holdings_changed(risk_state.get("account_baseline"), account),
                 )
                 if external_flow:
                     if mark_flow_rebalance(core_state, external_flow, current_assets):

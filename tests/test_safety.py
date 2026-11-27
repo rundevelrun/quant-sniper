@@ -17,7 +17,7 @@ from bot import (
     stock_entry_block_reason,
     apply_core_fill, core_code_conflicts, core_dashboard_info,
     remember_core_last_prices, mark_flow_rebalance,
-    restore_dashboard_context, resolve_external_flow, rotation_alloc_pct, position_weight_pcts, dashboard_weight_cell,
+    restore_dashboard_context, resolve_external_flow, rotation_alloc_pct, holdings_changed, position_weight_pcts, dashboard_weight_cell,
     dashboard_holding_count_label, dashboard_long_term_rows,
     core_desired_shares, core_rebalance_due, core_shares,
     is_core_rebalance_window, plan_core_rebalance,
@@ -1521,6 +1521,20 @@ class SafetyTests(unittest.TestCase):
         table = md.split("## 현재 보유 포지션", 1)[1].split("## ", 1)[0]
         self.assertLess(table.index("<td>최근</td>"), table.index("<td>코어</td>"))
         self.assertLess(table.index("<td>코어</td>"), table.index("<td>오래된</td>"))
+
+
+    def test_deposit_during_trade_is_caught_from_history(self):
+        class Api:
+            def get_cash_flows(self, date):
+                return [{"id": "7", "amount": 30000, "memo": "이체입금"}]
+        prev = {"positions": {"114800": {"shares": 69}}}
+        after_trade = {"positions": {"114800": {"shares": 0}}}
+        self.assertTrue(holdings_changed(prev, after_trade))
+        self.assertFalse(holdings_changed(prev, prev))
+        # 매매로 잔고 추정이 0이어도 입출금 내역의 입금을 반영한다.
+        self.assertEqual(resolve_external_flow(Api(), {}, "2026-12-01", 0, 400000, traded=True), 30000)
+        # 매매도 없고 추정도 0이면 조회하지 않는다.
+        self.assertEqual(resolve_external_flow(Api(), {}, "2026-12-01", 0, 400000), 0)
 
 
 if __name__ == "__main__":
