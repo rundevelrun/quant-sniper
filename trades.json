@@ -173,5 +173,24 @@
     "strategy": "RSI 과매도 반등",
     "entry_date": "2026-11-25",
     "days_held": 3
+  },
+  {
+    "timestamp": "2026-11-27 09:36:13",
+    "type": "SELL",
+    "name": "한화투자증권",
+    "code": "003530",
+    "shares": 8,
+    "entry_price": 3425.0,
+    "exit_price": 3460.0,
+    "signal_price": 3465.0,
+    "price_source": "broker_execution",
+    "gross_return_pct": 1.02,
+    "net_return_pct": 0.61,
+    "cost_fee_krw": 113.0,
+    "net_profit_krw": 167.0,
+    "reason": "사용자 지정 이익 청산 (3,460원 이상)",
+    "strategy": "RSI 과매도 반등",
+    "entry_date": "2026-11-24",
+    "days_held": 4
   }
 ]
