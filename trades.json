@@ -154,5 +154,24 @@
     "take_profit_pct": 1.0,
     "strategy": "시장 ETF 3상태 추세전환",
     "roundtrip_cost_pct": 0.0013
+  },
+  {
+    "timestamp": "2026-11-27 09:16:26",
+    "type": "SELL",
+    "name": "클래시스",
+    "code": "214150",
+    "shares": 1,
+    "entry_price": 21950.0,
+    "exit_price": 22150.0,
+    "signal_price": 22200.0,
+    "price_source": "broker_execution",
+    "gross_return_pct": 0.91,
+    "net_return_pct": 0.5,
+    "cost_fee_krw": 91.0,
+    "net_profit_krw": 109.0,
+    "reason": "사용자 지정 이익 청산 (22,200원 이상)",
+    "strategy": "RSI 과매도 반등",
+    "entry_date": "2026-11-25",
+    "days_held": 3
   }
 ]
