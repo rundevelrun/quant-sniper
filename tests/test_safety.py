@@ -1470,5 +1470,42 @@ class SafetyTests(unittest.TestCase):
 
 
 
+    def test_dashboard_sync_builds_tree_without_pushing(self):
+        import subprocess
+        import bot
+        real_run = subprocess.run
+        calls = []
+
+        def fake_run(cmd, *args, **kwargs):
+            calls.append(cmd[:2])
+            if cmd[:2] == ["git", "push"]:
+                class Result:
+                    stdout = ""
+                    returncode = 0
+                return Result()
+            return real_run(cmd, *args, **kwargs)
+
+        class RT:
+            def quote(self, code, *_):
+                return None
+
+            def is_healthy(self):
+                return True, ""
+
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        saved = (bot.AUTO_GIT_PUSH, bot.DASHBOARD_FILE, bot.DASHBOARD_STATE_FILE)
+        bot.AUTO_GIT_PUSH = True
+        bot.DASHBOARD_FILE = os.path.join(tmp, "DASHBOARD.md")
+        bot.DASHBOARD_STATE_FILE = os.path.join(tmp, "dashboard_state.json")
+        bot.subprocess.run = fake_run
+        try:
+            self.assertTrue(bot.sync_dashboard_to_branch("running", "test", {}, RT(), {}))
+        finally:
+            bot.subprocess.run = real_run
+            bot.AUTO_GIT_PUSH, bot.DASHBOARD_FILE, bot.DASHBOARD_STATE_FILE = saved
+        self.assertIn(["git", "push"], calls)
+
+
 if __name__ == "__main__":
     unittest.main()

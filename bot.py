@@ -846,7 +846,7 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
     os.replace(temp_path, DASHBOARD_FILE)
     try:
         dashboard_blob = subprocess.run(
-            ["git", "hash-object", "-w", "DASHBOARD.md"], cwd=BASE_DIR,
+            ["git", "hash-object", "-w", DASHBOARD_FILE], cwd=BASE_DIR,
             capture_output=True, text=True, check=True,
         ).stdout.strip()
         events_blob = subprocess.run(
@@ -854,9 +854,20 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
             capture_output=True, text=True, check=True,
         ).stdout.strip()
         state_blob = subprocess.run(
-            ["git", "hash-object", "-w", "dashboard_state.json"], cwd=BASE_DIR,
+            ["git", "hash-object", "-w", DASHBOARD_STATE_FILE], cwd=BASE_DIR,
             capture_output=True, text=True, check=True,
         ).stdout.strip()
+        asset_tree = None
+        if os.path.exists(BANNER_FILE):
+            banner_blob = subprocess.run(
+                ["git", "hash-object", "-w", BANNER_FILE], cwd=BASE_DIR,
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            asset_tree = subprocess.run(
+                ["git", "mktree"], cwd=BASE_DIR,
+                input=f"100644 blob {banner_blob}\tbanner.svg\n",
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
         svg_entries = []
         for asset_name, svg in sorted(render_context.get("svg_assets", {}).items()):
             svg_blob = subprocess.run(
@@ -874,7 +885,6 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
             f"100644 blob {dashboard_blob}\tREADME.md\n"
             f"100644 blob {events_blob}\tdashboard_events.json\n"
             f"100644 blob {state_blob}\tdashboard_state.json\n"
-
         )
         if svg_tree:
             tree_input += f"040000 tree {svg_tree}\tsvg\n"
