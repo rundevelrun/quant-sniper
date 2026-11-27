@@ -47,6 +47,11 @@ class ResearchClient:
                     time.sleep(1.5 * (attempt + 1))
                     continue
                 raise
+            except (urllib.error.URLError, TimeoutError):  # 네트워크 일시 장애
+                if attempt < 3:
+                    time.sleep(3 * (attempt + 1))
+                    continue
+                raise
         raise RuntimeError("retry exhausted")
 
     def paged(self, path, api_id, body, key, max_pages=50):
