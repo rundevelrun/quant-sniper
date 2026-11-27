@@ -2,6 +2,7 @@ import os
 import time
 import json
 import urllib.request
+import urllib.error
 import urllib.parse
 
 from strategy import calculate_rsi
@@ -167,16 +168,25 @@ class KiwoomRestAPI:
         req = urllib.request.Request(
             url, data=json.dumps(body).encode("utf-8"), headers=headers, method="POST"
         )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as r:
-                data = json.loads(r.read().decode("utf-8"))
-                balance = _number(data.get("ord_alow_amt", data.get("entr", 0.0)))
-                self.cash_balance_cache = balance
-                self.cash_balance_cache_at = now
-                return balance
-        except Exception as e:
-            print(f"[ERR] 예수금 조회 실패: {e}")
-            return self.cash_balance_cache if self.cash_balance_cache is not None else 0.0
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    data = json.loads(r.read().decode("utf-8"))
+                    balance = _number(data.get("ord_alow_amt", data.get("entr", 0.0)))
+                    self.cash_balance_cache = balance
+                    self.cash_balance_cache_at = now
+                    return balance
+            except urllib.error.HTTPError as e:
+                # 주문 직후 연속 조회 시 키움이 429(요청 과다)를 돌려준다. 잠시 쉬고 재시도.
+                if e.code == 429 and attempt < 2:
+                    time.sleep(1.0 + attempt)
+                    continue
+                print(f"[ERR] 예수금 조회 실패: {e}")
+                break
+            except Exception as e:
+                print(f"[ERR] 예수금 조회 실패: {e}")
+                break
+        return self.cash_balance_cache if self.cash_balance_cache is not None else 0.0
 
     def _post_domestic(self, path, api_id, body):
         """국내주식 조회 TR 공통 호출. 실패 시 원인을 포함한 dict를 반환한다."""

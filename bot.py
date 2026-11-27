@@ -76,8 +76,6 @@ DISPLAY_QUOTE_MAX_AGE_SECONDS = 6 * 3600
 STARTUP_LIVE_WAIT_SECONDS = 90
 # 보유 포지션 청산 판단에 쓰는 시세 허용 나이(주문 진입은 15초 기준 유지).
 EXIT_QUOTE_MAX_AGE_SECONDS = 60
-# 사용자가 지정한 종목별 이익 청산가. 예: {"003530": {"min_price": 3460}}
-EXIT_OVERRIDE_FILE = os.path.join(BASE_DIR, "exit_overrides.json")
 LOCK_FILE = os.path.join(BASE_DIR, ".quant_sniper.lock")
 RESEARCH_DB_FILE = os.path.join(BASE_DIR, "research_data.db")
 CURRENT_MARKET_OPEN = False
@@ -499,12 +497,6 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             else:
                 display_strategy = strategy
                 exit_plan = "ATR 손절 · +4% 보호 · +8% 추적 · 타임스탑"
-                override_price = float(
-                    ((context.get("exit_overrides") or {}).get(str(pos.get("code"))) or {})
-                    .get("min_price") or 0
-                )
-                if override_price > 0:
-                    exit_plan += f" · 이익 청산 {override_price:,.0f}원"
             protection = (
                 "고점 추적 ON" if pos.get("trailing_active")
                 else "수익 보호 ON" if pos.get("trailing_stop_price")
@@ -2116,14 +2108,6 @@ def sector_etf_trend_selection(candles_by_code, benchmark_candles,
         ),
     }
 
-def exit_override_reason(overrides, code, price):
-    """사용자 지정 이익 청산가 이상이면 청산 사유를 반환한다."""
-    item = (overrides or {}).get(str(code)) or {}
-    min_price = float(item.get("min_price") or 0)
-    if min_price > 0 and price is not None and float(price) >= min_price:
-        return f"사용자 지정 이익 청산 ({min_price:,.0f}원 이상)"
-    return None
-
 def rotation_alloc_pct(code):
     """추세전환 신규 진입 비중: 인버스는 별도 상한을 적용한다."""
     if str(code) in ETF_INVERSE_CODES:
@@ -2456,8 +2440,7 @@ def run_trading_loop():
                     dashboard_context["position_weights"] = position_weight_pcts(
                         closed_positions, realtime, closed_total_assets,
                     )
-                    dashboard_context["exit_overrides"] = load_json(EXIT_OVERRIDE_FILE, {})
-                realtime_connected, _ = realtime.is_healthy()
+                    realtime_connected, _ = realtime.is_healthy()
                 startup_wait_done = time.time() - dashboard_started_at >= 60
                 should_publish = (
                     (dashboard_dirty and (realtime_connected or startup_wait_done))
@@ -3122,13 +3105,6 @@ def run_trading_loop():
                         if time_exit_reason:
                             exit_price = curr_p
                             exit_reason = time_exit_reason
-                    if not exit_price:
-                        override_reason = exit_override_reason(
-                            load_json(EXIT_OVERRIDE_FILE, {}), pos.get("code"), curr_p
-                        )
-                        if override_reason:
-                            exit_price = curr_p
-                            exit_reason = override_reason
                     
                 if exit_price:
                     if account.get("ok"):
@@ -3657,7 +3633,6 @@ def run_trading_loop():
                 )
             if account.get("ok"):
                 refreshed_total_assets = float(account.get("total_assets") or 0)
-                dashboard_context["exit_overrides"] = load_json(EXIT_OVERRIDE_FILE, {})
                 dashboard_context["position_weights"] = position_weight_pcts(
                     load_json(POSITIONS_FILE, {}), realtime, refreshed_total_assets,
                 )

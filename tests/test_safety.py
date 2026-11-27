@@ -16,7 +16,7 @@ from bot import (
     git_commit_and_push, is_entry_window, is_stock_entry_window,
     stock_entry_block_reason,
     apply_core_fill, core_code_conflicts, core_dashboard_info,
-    exit_override_reason, remember_core_last_prices, mark_flow_rebalance,
+    remember_core_last_prices, mark_flow_rebalance,
     restore_dashboard_context, resolve_external_flow, rotation_alloc_pct, position_weight_pcts, dashboard_weight_cell,
     dashboard_holding_count_label, dashboard_long_term_rows,
     core_desired_shares, core_rebalance_due, core_shares,
@@ -1392,15 +1392,6 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(dashboard_holding_count_label({"A": {}}, context),
                          "매매 1 · 코어 1 · 대기 1")
         self.assertEqual(dashboard_holding_count_label({}, {}), "매매 0")
-
-
-    def test_exit_override_triggers_only_at_or_above_price(self):
-        overrides = {"003530": {"min_price": 3460}}
-        self.assertIsNone(exit_override_reason(overrides, "003530", 3455))
-        self.assertIn("이익 청산", exit_override_reason(overrides, "003530", 3460))
-        self.assertIsNone(exit_override_reason(overrides, "214150", 99999))
-        self.assertIsNone(exit_override_reason({}, "003530", 3460))
-        self.assertIsNone(exit_override_reason(overrides, "003530", None))
 
 
     def test_position_weights_are_percent_only(self):
