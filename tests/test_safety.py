@@ -17,7 +17,7 @@ from bot import (
     stock_entry_block_reason,
     apply_core_fill, core_code_conflicts, core_dashboard_info,
     exit_override_reason, remember_core_last_prices, mark_flow_rebalance,
-    restore_dashboard_context, status_badge, heartbeat_badge, resolve_external_flow, rotation_alloc_pct, position_weight_pcts, dashboard_weight_cell,
+    restore_dashboard_context, resolve_external_flow, rotation_alloc_pct, position_weight_pcts, dashboard_weight_cell,
     dashboard_holding_count_label, dashboard_long_term_rows,
     core_desired_shares, core_rebalance_due, core_shares,
     is_core_rebalance_window, plan_core_rebalance,
@@ -1445,13 +1445,6 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(restore_dashboard_context(None), {})
 
 
-    def test_status_badge_reflects_state(self):
-        self.assertEqual(status_badge("running", True)["color"], "brightgreen")
-        self.assertIn("장외", status_badge("running", False)["message"])
-        self.assertEqual(status_badge("halted", True)["message"], "HALTED")
-        self.assertEqual(status_badge("halted", True)["schemaVersion"], 1)
-
-
     def test_resolve_external_flow_excludes_distributions_and_dedupes(self):
         class Api:
             def __init__(self, flows):
@@ -1475,10 +1468,6 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(rotation_alloc_pct("114800"), 0.15)
         self.assertEqual(rotation_alloc_pct("069500"), 0.30)
 
-
-    def test_heartbeat_badge_shows_minutes(self):
-        b = heartbeat_badge(datetime.datetime(2026, 11, 27, 9, 15, 10))
-        self.assertEqual((b["label"], b["message"], b["schemaVersion"]), ("heartbeat", "11-27 09:15", 1))
 
 
 if __name__ == "__main__":

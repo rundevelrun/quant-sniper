@@ -812,10 +812,6 @@ DASHBOARD_HEADER_LINES = [
         f'<a href="{REPO_URL}#운영-시간표">운영 시간표</a>',
     ]) + "</b></p>",
     "",
-    '<p align="center"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com'
-    '%2Frundevelrun%2Fquant-sniper%2Fdashboard%2Fbadge.json&style=flat-square" alt="bot status">&nbsp;&nbsp;'
-    '<img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com'
-    '%2Frundevelrun%2Fquant-sniper%2Fdashboard%2Fheartbeat.json&style=flat-square" alt="heartbeat"><br><br></p>',
     "",
 ]
 DASHBOARD_FOOTER_LINES = [
@@ -825,23 +821,6 @@ DASHBOARD_FOOTER_LINES = [
     + f'<a href="{REPO_URL}">← 프로젝트 README</a></p>',
     "",
 ]
-
-def heartbeat_badge(now):
-    """README heartbeat 배지용 shields.io endpoint JSON(마지막 대시보드 갱신 시각)."""
-    return {"schemaVersion": 1, "label": "heartbeat",
-            "message": now.strftime("%m-%d %H:%M"), "color": "64748b"}
-
-def status_badge(status, market_open):
-    """README 상태 배지용 shields.io endpoint JSON."""
-    if status == "halted":
-        message, color = "HALTED", "red"
-    elif status == "error":
-        message, color = "ERROR", "orange"
-    elif market_open:
-        message, color = "LIVE · 장중", "brightgreen"
-    else:
-        message, color = "LIVE · 장외", "blue"
-    return {"schemaVersion": 1, "label": "bot", "message": message, "color": color}
 
 def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
     """대시보드 파일만 부모 없는 단일 커밋으로 origin/dashboard에 교체한다."""
@@ -878,27 +857,6 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
             ["git", "hash-object", "-w", "dashboard_state.json"], cwd=BASE_DIR,
             capture_output=True, text=True, check=True,
         ).stdout.strip()
-        badge_blob = subprocess.run(
-            ["git", "hash-object", "-w", "--stdin"], cwd=BASE_DIR,
-            input=json.dumps(status_badge(status, CURRENT_MARKET_OPEN), ensure_ascii=False),
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        asset_tree = None
-        if os.path.exists(BANNER_FILE):
-            banner_blob = subprocess.run(
-                ["git", "hash-object", "-w", BANNER_FILE], cwd=BASE_DIR,
-                capture_output=True, text=True, check=True,
-            ).stdout.strip()
-            asset_tree = subprocess.run(
-                ["git", "mktree"], cwd=BASE_DIR,
-                input=f"100644 blob {banner_blob}\tbanner.svg\n",
-                capture_output=True, text=True, check=True,
-            ).stdout.strip()
-        heartbeat_blob = subprocess.run(
-            ["git", "hash-object", "-w", "--stdin"], cwd=BASE_DIR,
-            input=json.dumps(heartbeat_badge(now), ensure_ascii=False),
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
         svg_entries = []
         for asset_name, svg in sorted(render_context.get("svg_assets", {}).items()):
             svg_blob = subprocess.run(
@@ -916,8 +874,7 @@ def sync_dashboard_to_branch(status, detail, positions, realtime, context=None):
             f"100644 blob {dashboard_blob}\tREADME.md\n"
             f"100644 blob {events_blob}\tdashboard_events.json\n"
             f"100644 blob {state_blob}\tdashboard_state.json\n"
-            f"100644 blob {badge_blob}\tbadge.json\n"
-            f"100644 blob {heartbeat_blob}\theartbeat.json\n"
+
         )
         if svg_tree:
             tree_input += f"040000 tree {svg_tree}\tsvg\n"

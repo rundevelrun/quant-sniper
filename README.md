@@ -6,8 +6,6 @@
 <a href="https://github.com/rundevelrun/quant-sniper/tree/dashboard">Dashboard</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#한눈에-보기">한눈에 보기</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#백테스트-근거-2017-01--2026-11">백테스트</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#운영-시간표">운영 시간표</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="#대시보드와-모니터링">설치</a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;<a href="LICENSE">License</a>
 </b></p>
 
-<p align="center"><a href="https://github.com/rundevelrun/quant-sniper/tree/dashboard"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frundevelrun%2Fquant-sniper%2Fdashboard%2Fbadge.json&style=flat-square" alt="bot status"></a>&nbsp;&nbsp;<a href="https://github.com/rundevelrun/quant-sniper/tree/dashboard"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frundevelrun%2Fquant-sniper%2Fdashboard%2Fheartbeat.json&style=flat-square" alt="heartbeat"></a><br><br></p>
-
 > **내가 매수 버튼을 누르는 게 가장 큰 리스크라서 만든 프로젝트.**
 
 키움증권 REST·WebSocket API로 한국 주식 계좌를 운용하는 실전 자동매매 시스템입니다. 미리 정한 진입·청산·자금관리 규칙만 실행하고, 조건이 불명확하거나 데이터가 부족하면 주문하지 않습니다. 실제 손실이 날 수 있음을 알고, 감정적으로 직접 매매하는 것보다 규칙과 손실 한도가 있는 편이 낫다고 판단해 운영합니다.
