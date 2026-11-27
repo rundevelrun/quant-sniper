@@ -97,6 +97,8 @@ class KiwoomRestAPI:
         self.base_url = "https://api.kiwoom.com"
         self.token = None
         self.token_expiry = 0
+        self.withdrawable = None
+        self.withdrawable_d1 = None
         self.last_universe_metadata = {}
         self.last_intraday_metadata = {}
         self.cash_balance_cache = None
@@ -173,6 +175,9 @@ class KiwoomRestAPI:
                 with urllib.request.urlopen(req, timeout=10) as r:
                     data = json.loads(r.read().decode("utf-8"))
                     balance = _number(data.get("ord_alow_amt", data.get("entr", 0.0)))
+                    # 계좌 간 이체 안내용: 실제 출금 가능 금액(오늘·D+1)
+                    self.withdrawable = _number(data.get("pymn_alow_amt"))
+                    self.withdrawable_d1 = _number(data.get("d1_pymn_alow_amt"))
                     self.cash_balance_cache = balance
                     self.cash_balance_cache_at = now
                     return balance

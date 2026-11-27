@@ -2170,6 +2170,8 @@ def run_trading_loop():
         check_flows = api.get_cash_flows(
             check_end.isoformat(), (check_end - datetime.timedelta(days=30)).isoformat()
         )
+        api.get_cash_balance(force_refresh=True)
+        print(f"[CASHFLOW] 출금가능 {api.withdrawable} / D+1 출금가능 {api.withdrawable_d1}", flush=True)
         if check_flows is None:
             print("[CASHFLOW] 입출금 내역 조회 실패: 잔고 추정 방식으로 동작", flush=True)
         else:
