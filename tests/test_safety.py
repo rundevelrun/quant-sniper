@@ -1498,5 +1498,30 @@ class SafetyTests(unittest.TestCase):
         self.assertIn(["git", "push"], calls)
 
 
+    def test_positions_table_lists_shortest_holding_first(self):
+        import bot
+
+        class RT:
+            def quote(self, code, *_):
+                return None
+
+            def is_healthy(self):
+                return True, ""
+
+        positions = {
+            "오래된": {"code": "000001", "buy_price": 100, "last_price": 100, "shares": 1,
+                     "days_held": 9, "strategy": "RSI 과매도 반등"},
+            "최근": {"code": "000002", "buy_price": 100, "last_price": 100, "shares": 1,
+                   "days_held": 1, "strategy": "RSI 과매도 반등"},
+        }
+        context = {"core": {"enabled": True, "assets": [
+            {"name": "코어", "code": "000003", "held": True, "days_held": 3,
+             "target_pct": 7.5, "weight_pct": 7.0, "return_pct": 0.0}]}}
+        md = bot.render_dashboard("running", "x", positions, RT(), [], context=context)
+        table = md.split("## 현재 보유 포지션", 1)[1].split("## ", 1)[0]
+        self.assertLess(table.index("<td>최근</td>"), table.index("<td>코어</td>"))
+        self.assertLess(table.index("<td>코어</td>"), table.index("<td>오래된</td>"))
+
+
 if __name__ == "__main__":
     unittest.main()

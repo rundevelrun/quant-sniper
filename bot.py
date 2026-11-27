@@ -467,6 +467,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
         '<th width="11%">현재 보호</th><th width="30%">청산 계획</th>',
         '</tr></thead><tbody>',
     ]
+    # 보유 기간이 짧은(최근 진입) 종목이 위로 오도록 행을 모아 정렬한다.
+    position_rows = []
     if positions:
         for name, pos in positions.items():
             quote = realtime.quote(pos.get("code", ""), DISPLAY_QUOTE_MAX_AGE_SECONDS)
@@ -503,7 +505,7 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 else "재해 손절" if strategy in {ETF_ROTATION_STRATEGY, SECTOR_ETF_STRATEGY}
                 else "초기 손절"
             )
-            lines.append(
+            position_rows.append((int(pos.get("days_held", 0) or 0), (
                 '<tr>'
                 f'<td>{html.escape(str(display_name))}</td>'
                 f'<td>{html.escape(str(display_strategy))}</td>'
@@ -513,10 +515,11 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
                 f'<td>{html.escape(protection)}</td>'
                 f'<td>{html.escape(exit_plan)}</td>'
                 '</tr>'
-            )
+            )))
     long_term_rows = dashboard_long_term_rows(context)
     for row in long_term_rows:
-        lines.append(
+        days = int(row.get("days_held") or 0) or 10**6  # 보유 기간 미상(대기자금)은 맨 아래
+        position_rows.append((days, (
             '<tr>'
             f'<td>{html.escape(str(row["name"]))}</td>'
             f'<td>{html.escape(row["strategy"])}</td>'
@@ -526,7 +529,8 @@ def render_dashboard(status, detail, positions, realtime, events, now=None, cont
             '<td>없음(장기 보유)</td>'
             f'<td>{html.escape(row["exit_plan"])}</td>'
             '</tr>'
-        )
+        )))
+    lines += [html_row for _, html_row in sorted(position_rows, key=lambda item: item[0])]
     if not positions and not long_term_rows:
         lines.append('<tr><td colspan="7">보유 종목 없음</td></tr>')
     lines += ['</tbody></table>']
