@@ -53,10 +53,16 @@ def main():
                              "all_net": cf.num(r.get("all_netprps"))} for r in rows])
         n = merge_csv(os.path.join(C, "flows", f"program_{name}.csv"), new, "date")
         print(name, "program rows", n, flush=True)
-    for code in cm.CODES:
-        rows = client.paged("/api/dostk/chart", "ka10080",
-                            {"stk_cd": code, "tic_scope": "1", "upd_stkpc_tp": "1", "base_dt": today},
-                            "stk_min_pole_chart_qry", max_pages=8)
+    for code in cm.symbols():
+        try:
+            rows = client.paged("/api/dostk/chart", "ka10080",
+                                {"stk_cd": code, "tic_scope": "1", "upd_stkpc_tp": "1", "base_dt": today},
+                                "stk_min_pole_chart_qry", max_pages=8)
+        except Exception as exc:
+            print(code, "분봉 실패", exc, flush=True)
+            continue
+        if not rows:
+            continue
         new = pd.DataFrame({"time": pd.to_datetime([r["cntr_tm"] for r in rows], format="%Y%m%d%H%M%S"),
                             "open": [cm.num(r["open_pric"]) for r in rows], "high": [cm.num(r["high_pric"]) for r in rows],
                             "low": [cm.num(r["low_pric"]) for r in rows], "close": [cm.num(r["cur_prc"]) for r in rows],

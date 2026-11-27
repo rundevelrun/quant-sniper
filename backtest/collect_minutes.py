@@ -18,13 +18,30 @@ def num(v):
     return abs(float(str(v).replace("+", "").replace(",", "") or 0))
 
 
+def symbols():
+    """수집 대상: minutes/symbols.txt(없으면 기본 7종)."""
+    path = os.path.join(OUT, "symbols.txt")
+    if os.path.exists(path):
+        return [s.strip() for s in open(path) if s.strip()]
+    return list(CODES)
+
+
 def main(base_dt):
     os.makedirs(OUT, exist_ok=True)
     c = ResearchClient()
-    for code, name in CODES.items():
-        rows = c.paged("/api/dostk/chart", "ka10080",
+    for code in symbols():
+        name = CODES.get(code, code)
+        if os.path.exists(os.path.join(OUT, f"{code}.csv")):
+            continue  # 이미 받은 종목은 일일 갱신에서 이어 붙인다
+        try:
+            rows = c.paged("/api/dostk/chart", "ka10080",
                        {"stk_cd": code, "tic_scope": "1", "upd_stkpc_tp": "1", "base_dt": base_dt},
-                       "stk_min_pole_chart_qry", max_pages=400)
+                           "stk_min_pole_chart_qry", max_pages=400)
+        except Exception as exc:
+            print(code, "실패", exc, flush=True)
+            continue
+        if not rows:
+            continue
         df = pd.DataFrame({"time": pd.to_datetime([r["cntr_tm"] for r in rows], format="%Y%m%d%H%M%S"),
                            "open": [num(r["open_pric"]) for r in rows], "high": [num(r["high_pric"]) for r in rows],
                            "low": [num(r["low_pric"]) for r in rows], "close": [num(r["cur_prc"]) for r in rows],
