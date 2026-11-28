@@ -1,0 +1,554 @@
+{
+  "timestamp": "2026-11-29 01:00:20",
+  "status": "running",
+  "detail": "정규장 운영 시간 외",
+  "is_market_open": false,
+  "position_count": 1,
+  "positions": [
+    {
+      "name": "KODEX 인버스 추세",
+      "code": "114800",
+      "shares": 69,
+      "buy_price": 1404.0,
+      "current_price": 1356.0,
+      "return_pct": -3.42,
+      "trailing_active": false,
+      "days_held": 2
+    }
+  ],
+  "websocket_connected": true,
+  "websocket_error": "",
+  "last_quote_at": null,
+  "last_account_sync": "2026-11-27 15:20:06",
+  "last_loop_at": null,
+  "running_commit": "501df01",
+  "entry_allowed": false,
+  "stock_entry_block_reason": "개별주 전략 비활성화(보유분만 청산 감시)",
+  "parking": {
+    "name": "TIGER CD금리투자KIS(합성)",
+    "code": "357870",
+    "weight_pct": 15.0,
+    "return_pct": 0.0
+  },
+  "core": {
+    "enabled": true,
+    "last_rebalance_month": "2026-11",
+    "assets": [
+      {
+        "name": "PLUS 고배당주",
+        "code": "161510",
+        "held": true,
+        "days_held": 1,
+        "target_pct": 3.8,
+        "weight_pct": 5.4,
+        "return_pct": 1.57
+      },
+      {
+        "name": "TIGER 미국배당다우존스",
+        "code": "458730",
+        "held": true,
+        "days_held": 1,
+        "target_pct": 3.8,
+        "weight_pct": 3.9,
+        "return_pct": -0.27
+      },
+      {
+        "name": "ACE 미국나스닥100",
+        "code": "367380",
+        "held": true,
+        "days_held": 2,
+        "target_pct": 7.5,
+        "weight_pct": 7.0,
+        "return_pct": 2.28
+      },
+      {
+        "name": "ACE 국고채10년",
+        "code": "365780",
+        "held": true,
+        "days_held": 2,
+        "target_pct": 20.0,
+        "weight_pct": 22.3,
+        "return_pct": -0.33
+      },
+      {
+        "name": "TIGER 골드선물(H)",
+        "code": "319640",
+        "held": true,
+        "days_held": 2,
+        "target_pct": 7.5,
+        "weight_pct": 5.5,
+        "return_pct": 2.04
+      },
+      {
+        "name": "TIGER 미국달러단기채권액티브",
+        "code": "329750",
+        "held": true,
+        "days_held": 2,
+        "target_pct": 7.5,
+        "weight_pct": 6.5,
+        "return_pct": -1.72
+      }
+    ]
+  },
+  "account_drawdown_pct": 1.0523366866165795,
+  "daily_return_pct": -0.5699369153795953,
+  "cumulative_return_pct": 1.9754,
+  "twr_return_pct": 2.3392,
+  "entry_size_multiplier": 1.0,
+  "last_external_flow": {
+    "timestamp": "2026-11-27 15:12:47",
+    "amount": 56.0
+  },
+  "universe_date": "2026-11-27",
+  "universe_source": "kiwoom_previous_day_rsi_vbo_mixed",
+  "universe_count": 12,
+  "universe_symbols": [
+    {
+      "name": "한화솔루션",
+      "code": "009830",
+      "market": "KOSPI",
+      "sector": "화학"
+    },
+    {
+      "name": "미래에셋벤처투자",
+      "code": "100790",
+      "market": "KOSDAQ",
+      "sector": "금융"
+    },
+    {
+      "name": "루닛",
+      "code": "328130",
+      "market": "KOSDAQ",
+      "sector": "IT 서비스"
+    },
+    {
+      "name": "삼표시멘트",
+      "code": "038500",
+      "market": "KOSDAQ",
+      "sector": "비금속"
+    },
+    {
+      "name": "와이씨",
+      "code": "232140",
+      "market": "KOSDAQ",
+      "sector": "기계/장비"
+    },
+    {
+      "name": "현대무벡스",
+      "code": "319400",
+      "market": "KOSDAQ",
+      "sector": "기계/장비"
+    },
+    {
+      "name": "코오롱티슈진",
+      "code": "950160",
+      "market": "KOSDAQ",
+      "sector": "미분류"
+    },
+    {
+      "name": "롯데관광개발",
+      "code": "032350",
+      "market": "KOSPI",
+      "sector": "일반서비스"
+    },
+    {
+      "name": "대우건설",
+      "code": "047040",
+      "market": "KOSPI",
+      "sector": "건설"
+    },
+    {
+      "name": "하나마이크론",
+      "code": "067310",
+      "market": "KOSDAQ",
+      "sector": "전기/전자"
+    },
+    {
+      "name": "SFA반도체",
+      "code": "036540",
+      "market": "KOSDAQ",
+      "sector": "전기/전자"
+    },
+    {
+      "name": "대한전선",
+      "code": "001440",
+      "market": "KOSPI",
+      "sector": "전기/전자"
+    }
+  ],
+  "tradeability": [
+    {
+      "name": "삼표시멘트",
+      "code": "038500",
+      "market": "KOSDAQ",
+      "sector": "비금속",
+      "price": 5740.0,
+      "stop_loss_pct": 0.06,
+      "max_shares": 3,
+      "favorable_max_shares": 7,
+      "unfavorable_max_shares": 3,
+      "market_size_multiplier": 0.5,
+      "eligible": true,
+      "reason": "비우호장 50% 한도에서 가능"
+    },
+    {
+      "name": "SFA반도체",
+      "code": "036540",
+      "market": "KOSDAQ",
+      "sector": "전기/전자",
+      "price": 8440.0,
+      "stop_loss_pct": 0.06,
+      "max_shares": 2,
+      "favorable_max_shares": 5,
+      "unfavorable_max_shares": 2,
+      "market_size_multiplier": 0.5,
+      "eligible": true,
+      "reason": "비우호장 50% 한도에서 가능"
+    },
+    {
+      "name": "대우건설",
+      "code": "047040",
+      "market": "KOSPI",
+      "sector": "건설",
+      "price": 10380.0,
+      "stop_loss_pct": 0.06,
+      "max_shares": 2,
+      "favorable_max_shares": 4,
+      "unfavorable_max_shares": 2,
+      "market_size_multiplier": 0.5,
+      "eligible": true,
+      "reason": "비우호장 50% 한도에서 가능"
+    },
+    {
+      "name": "롯데관광개발",
+      "code": "032350",
+      "market": "KOSPI",
+      "sector": "일반서비스",
+      "price": 11790.0,
+      "stop_loss_pct": 0.06,
+      "max_shares": 1,
+      "favorable_max_shares": 3,
+      "unfavorable_max_shares": 1,
+      "market_size_multiplier": 0.5,
+      "eligible": true,
+      "reason": "비우호장 50% 한도에서 가능"
+    },
+    {
+      "name": "와이씨",
+      "code": "232140",
+      "market": "KOSDAQ",
+      "sector": "기계/장비",
+      "price": 14250.0,
+      "stop_loss_pct": 0.06,
+      "max_shares": 1,
+      "favorable_max_shares": 3,
+      "unfavorable_max_shares": 1,
+      "market_size_multiplier": 0.5,
+      "eligible": true,
+      "reason": "비우호장 50% 한도에서 가능"
+    },
+    {
+      "name": "코오롱티슈진",
+      "code": "950160",
+      "market": "KOSDAQ",
+      "sector": "미분류",
+      "price": 16800.0,
+      "stop_loss_pct": 0.06,
+      "max_shares": 1,
+      "favorable_max_shares": 2,
+      "unfavorable_max_shares": 1,
+      "market_size_multiplier": 0.5,
+      "eligible": true,
+      "reason": "비우호장 50% 한도에서 가능"
+    },
+    {
+      "name": "루닛",
+      "code": "328130",
+      "market": "KOSDAQ",
+      "sector": "IT 서비스",
+      "price": 17650.0,
+      "stop_loss_pct": 0.06,
+      "max_shares": 1,
+      "favorable_max_shares": 2,
+      "unfavorable_max_shares": 1,
+      "market_size_multiplier": 0.5,
+      "eligible": true,
+      "reason": "비우호장 50% 한도에서 가능"
+    },
+    {
+      "name": "대한전선",
+      "code": "001440",
+      "market": "KOSPI",
+      "sector": "전기/전자",
+      "price": 17780.0,
+      "stop_loss_pct": 0.06,
+      "max_shares": 1,
+      "favorable_max_shares": 2,
+      "unfavorable_max_shares": 1,
+      "market_size_multiplier": 0.5,
+      "eligible": true,
+      "reason": "비우호장 50% 한도에서 가능"
+    },
+    {
+      "name": "현대무벡스",
+      "code": "319400",
+      "market": "KOSDAQ",
+      "sector": "기계/장비",
+      "price": 19440.0,
+      "stop_loss_pct": 0.06,
+      "max_shares": 1,
+      "favorable_max_shares": 2,
+      "unfavorable_max_shares": 1,
+      "market_size_multiplier": 0.5,
+      "eligible": true,
+      "reason": "비우호장 50% 한도에서 가능"
+    },
+    {
+      "name": "미래에셋벤처투자",
+      "code": "100790",
+      "market": "KOSDAQ",
+      "sector": "금융",
+      "price": 19700.0,
+      "stop_loss_pct": 0.06,
+      "max_shares": 1,
+      "favorable_max_shares": 2,
+      "unfavorable_max_shares": 1,
+      "market_size_multiplier": 0.5,
+      "eligible": true,
+      "reason": "비우호장 50% 한도에서 가능"
+    },
+    {
+      "name": "한화솔루션",
+      "code": "009830",
+      "market": "KOSPI",
+      "sector": "화학",
+      "price": 20700.0,
+      "stop_loss_pct": 0.06,
+      "max_shares": 1,
+      "favorable_max_shares": 2,
+      "unfavorable_max_shares": 1,
+      "market_size_multiplier": 0.5,
+      "eligible": true,
+      "reason": "비우호장 50% 한도에서 가능"
+    }
+  ],
+  "market_favorable": false,
+  "market_regimes": {
+    "KOSPI": false,
+    "KOSDAQ": false
+  },
+  "signal_statuses": [],
+  "signal_diagnostics": [],
+  "raw_signal_count": 0,
+  "confirming_signal_count": 0,
+  "confirmed_signal_count": 0,
+  "mim_state": {},
+  "etf_rotation": {
+    "enabled": true,
+    "regime": "asset",
+    "target_code": "114800",
+    "held": true,
+    "name": "KODEX 인버스",
+    "previous_close": 1419.0,
+    "ma": 1148.4166666666667,
+    "ma_5d_ago": 1117.6,
+    "short_return_pct": 38.04,
+    "long_return_pct": 53.57,
+    "score": 0.47356864924958314,
+    "score_pct": 47.36,
+    "eligible": true,
+    "reason": "전일 확정 3/6개월 모멘텀 40/60%·60일선 +1%·교체 완충 2%p",
+    "target_name": "KODEX 인버스",
+    "assets": {
+      "069500": {
+        "name": "KODEX 200",
+        "previous_close": 73395.0,
+        "ma": 95456.2,
+        "ma_5d_ago": 98137.66666666667,
+        "short_return_pct": -31.43,
+        "long_return_pct": -47.98,
+        "score": -0.4135919990182667,
+        "score_pct": -41.36,
+        "eligible": false,
+        "reason": "60일선 +1%·상승 기울기·3/6개월 모멘텀"
+      },
+      "229200": {
+        "name": "KODEX 코스닥150",
+        "previous_close": 10850.0,
+        "ma": 12909.916666666666,
+        "ma_5d_ago": 13212.166666666666,
+        "short_return_pct": -25.04,
+        "long_return_pct": -39.57,
+        "score": -0.3375996121564706,
+        "score_pct": -33.76,
+        "eligible": false,
+        "reason": "60일선 +1%·상승 기울기·3/6개월 모멘텀"
+      },
+      "379800": {
+        "name": "KODEX 미국S&P500",
+        "previous_close": 21755.0,
+        "ma": 22988.933333333334,
+        "ma_5d_ago": 23171.85,
+        "short_return_pct": -8.49,
+        "long_return_pct": -15.47,
+        "score": -0.1267464038037186,
+        "score_pct": -12.67,
+        "eligible": false,
+        "reason": "60일선 +1%·상승 기울기·3/6개월 모멘텀"
+      },
+      "379810": {
+        "name": "KODEX 미국나스닥100",
+        "previous_close": 23245.0,
+        "ma": 25780.9,
+        "ma_5d_ago": 26069.633333333335,
+        "short_return_pct": -13.15,
+        "long_return_pct": -23.61,
+        "score": -0.19426452105090658,
+        "score_pct": -19.43,
+        "eligible": false,
+        "reason": "60일선 +1%·상승 기울기·3/6개월 모멘텀"
+      },
+      "132030": {
+        "name": "KODEX 골드선물(H)",
+        "previous_close": 19915.0,
+        "ma": 22996.25,
+        "ma_5d_ago": 23496.25,
+        "short_return_pct": -22.54,
+        "long_return_pct": -22.36,
+        "score": -0.224311517806574,
+        "score_pct": -22.43,
+        "eligible": false,
+        "reason": "60일선 +1%·상승 기울기·3/6개월 모멘텀"
+      },
+      "114260": {
+        "name": "KODEX 국고채3년",
+        "previous_close": 62880.0,
+        "ma": 62155.416666666664,
+        "ma_5d_ago": 62075.583333333336,
+        "short_return_pct": 1.57,
+        "long_return_pct": 2.54,
+        "score": 0.02148118565388537,
+        "score_pct": 2.15,
+        "eligible": true,
+        "reason": "60일선 +1%·상승 기울기·3/6개월 모멘텀"
+      },
+      "261240": {
+        "name": "KODEX 미국달러선물",
+        "previous_close": 13985.0,
+        "ma": 13942.5,
+        "ma_5d_ago": 13967.0,
+        "short_return_pct": -1.34,
+        "long_return_pct": -10.06,
+        "score": -0.06574740411825086,
+        "score_pct": -6.57,
+        "eligible": false,
+        "reason": "60일선 +1%·상승 기울기·3/6개월 모멘텀"
+      },
+      "114800": {
+        "name": "KODEX 인버스",
+        "previous_close": 1419.0,
+        "ma": 1148.4166666666667,
+        "ma_5d_ago": 1117.6,
+        "short_return_pct": 38.04,
+        "long_return_pct": 53.57,
+        "score": 0.47356864924958314,
+        "score_pct": 47.36,
+        "eligible": true,
+        "reason": "60일선 +1%·상승 기울기·3/6개월 모멘텀"
+      }
+    },
+    "traded_today": false,
+    "entry_gap_pct": -4.44,
+    "entry_gap_blocked": true
+  },
+  "sector_etf": {
+    "enabled": false,
+    "regime": "cash",
+    "target_code": null,
+    "held": false,
+    "reason": "시장보다 강한 상승 섹터 없음",
+    "assets": {
+      "091160": {
+        "name": "KODEX 반도체",
+        "previous_close": 81200.0,
+        "ma": 116159.75,
+        "ma_5d_ago": 119577.5,
+        "short_return_pct": -28.88,
+        "long_return_pct": -34.65,
+        "relative_strength_pct": -6.57,
+        "score": -0.3234150583461489,
+        "score_pct": -32.34,
+        "eligible": false,
+        "reason": "60일선 상승·1/3개월 양수·KODEX 200 대비 강세"
+      },
+      "305720": {
+        "name": "KODEX 2차전지산업",
+        "previous_close": 11420.0,
+        "ma": 13986.25,
+        "ma_5d_ago": 14254.166666666666,
+        "short_return_pct": -14.97,
+        "long_return_pct": -24.42,
+        "relative_strength_pct": 7.34,
+        "score": -0.20639145151983,
+        "score_pct": -20.64,
+        "eligible": false,
+        "reason": "60일선 상승·1/3개월 양수·KODEX 200 대비 강세"
+      },
+      "244580": {
+        "name": "KODEX 바이오",
+        "previous_close": 7445.0,
+        "ma": 7647.666666666667,
+        "ma_5d_ago": 7774.333333333333,
+        "short_return_pct": 1.15,
+        "long_return_pct": -14.23,
+        "relative_strength_pct": 23.46,
+        "score": -0.0807490983770787,
+        "score_pct": -8.07,
+        "eligible": false,
+        "reason": "60일선 상승·1/3개월 양수·KODEX 200 대비 강세"
+      },
+      "091170": {
+        "name": "KODEX 은행",
+        "previous_close": 14066.0,
+        "ma": 15199.583333333334,
+        "ma_5d_ago": 15333.7,
+        "short_return_pct": -1.29,
+        "long_return_pct": -13.09,
+        "relative_strength_pct": 21.01,
+        "score": -0.08371912914817166,
+        "score_pct": -8.37,
+        "eligible": false,
+        "reason": "60일선 상승·1/3개월 양수·KODEX 200 대비 강세"
+      },
+      "091180": {
+        "name": "KODEX 자동차",
+        "previous_close": 21205.0,
+        "ma": 24138.616666666665,
+        "ma_5d_ago": 24736.366666666665,
+        "short_return_pct": -8.34,
+        "long_return_pct": -24.1,
+        "relative_strength_pct": 13.96,
+        "score": -0.17798440801823087,
+        "score_pct": -17.8,
+        "eligible": false,
+        "reason": "60일선 상승·1/3개월 양수·KODEX 200 대비 강세"
+      },
+      "445290": {
+        "name": "KODEX 로봇액티브",
+        "previous_close": 25185.0,
+        "ma": 27669.966666666667,
+        "ma_5d_ago": 28175.216666666667,
+        "short_return_pct": -4.85,
+        "long_return_pct": -17.68,
+        "relative_strength_pct": 17.45,
+        "score": -0.12549783274911938,
+        "score_pct": -12.55,
+        "eligible": false,
+        "reason": "60일선 상승·1/3개월 양수·KODEX 200 대비 강세"
+      }
+    },
+    "traded_today": false,
+    "entry_gap_pct": null,
+    "entry_gap_blocked": false
+  }
+}
